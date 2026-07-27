@@ -173,19 +173,10 @@ function asJson(base, cookie) {
     const tenant = tenants.body.tenants.find(function (row) { return row.company_name === "Panadería La Espiga"; });
     assert.ok(tenant, "el cliente creado aparece en el listado");
 
-    // No se puede eliminar un cliente que no está suspendido.
-    const tooSoon = await superAdmin("POST", "/admin/tenants/" + tenant.id + "/delete", {
-      company_name_confirmacion: "Panadería La Espiga",
-      confirmacion_final: true
-    });
-    assert.strictEqual(tooSoon.status, 409, "salvaguarda 1: primero hay que suspender");
-    assert.strictEqual(tooSoon.body.error, "tenant_not_suspended");
-
     // Suspender corta el acceso y es reversible.
     assert.strictEqual((await superAdmin("POST", "/admin/tenants/" + tenant.id + "/status", { status: "suspendido" })).status, 200);
     assert.strictEqual((await superAdmin("POST", "/admin/tenants/" + tenant.id + "/status", { status: "activo" })).status, 200);
     assert.strictEqual((await superAdmin("POST", "/admin/tenants/" + tenant.id + "/status", { status: "basura" })).status, 400);
-    assert.strictEqual((await superAdmin("POST", "/admin/tenants/" + tenant.id + "/status", { status: "suspendido" })).status, 200);
 
     // El nombre de la empresa debe coincidir exactamente.
     const wrongName = await superAdmin("POST", "/admin/tenants/" + tenant.id + "/delete", {
@@ -202,7 +193,7 @@ function asJson(base, cookie) {
     assert.strictEqual(noFinal.status, 400, "salvaguarda 3: confirmación explícita");
     assert.strictEqual(noFinal.body.error, "final_confirmation_required");
 
-    // Con las tres cumplidas: borra y devuelve el respaldo.
+    // Con las salvaguardas cumplidas: suspende automáticamente, borra y devuelve el respaldo.
     const deleted = await superAdmin("POST", "/admin/tenants/" + tenant.id + "/delete", {
       company_name_confirmacion: "Panadería La Espiga",
       confirmacion_final: true

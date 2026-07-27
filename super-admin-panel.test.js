@@ -227,17 +227,19 @@ assert.match(accessV2Html, /name="precio_mensual"/);
 assert.match(accessV2Html, /name="beneficios"/);
 assert.match(accessV2Html, /\/admin\/catalogs/);
 
-// Ciclo de vida: suspender y eliminar con las tres salvaguardas visibles.
-assert.match(accessV2Html, /Ciclo de vida de clientes/);
+// Clientes reales: el registro heredado no aparece con v2; eliminar es más directo.
+assert.match(accessV2Html, /Clientes reales/);
+assert.doesNotMatch(accessV2Html, /Registro heredado/);
+assert.doesNotMatch(accessV2Html, /escrito en código/);
 assert.match(accessV2Html, /id="tenantDeleteModal"/);
-assert.match(accessV2Html, /El cliente debe estar suspendido/);
 assert.match(accessV2Html, /Escribe el nombre exacto de la empresa/);
 assert.match(accessV2Html, /Se descarga un respaldo antes de borrar/);
+assert.match(accessV2Html, /El acceso se corta automáticamente/);
 assert.match(accessV2Html, /\/admin\/tenants/);
 
 // Sin el gate, nada del catálogo se filtra al panel.
 assert.doesNotMatch(html, /data-view="catalogs"/);
 assert.doesNotMatch(html, /id="planEditorModal"/);
-assert.doesNotMatch(html, /Ciclo de vida de clientes/);
+assert.doesNotMatch(html, /Clientes reales/);
 
 console.log("super-admin-panel.test.js: ok");

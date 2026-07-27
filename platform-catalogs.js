@@ -574,6 +574,14 @@ function createCatalogService(options) {
       try { backup = await store.tenantBackup(cleanTenant); }
       catch (error) { throw mapStoreError(error); }
 
+      const backedTenant = backup && backup.tenant || {};
+      if (backedTenant.company_name && String(backedTenant.company_name).trim() !== confirmation) {
+        throw new CatalogError("company_name_mismatch", 400);
+      }
+
+      try { await store.setTenantStatus(cleanTenant, "suspendido", actorLabel(actor)); }
+      catch (error) { throw mapStoreError(error); }
+
       let result;
       try { result = await store.deleteTenant(cleanTenant, confirmation, actorLabel(actor)); }
       catch (error) { throw mapStoreError(error); }
