@@ -2696,13 +2696,15 @@ function mediaFilename(media) {
 }
 
 function extractOpenAIText(data) {
-  if (data && data.text) return String(data.text || "").trim();
-  if (data && data.output_text) return String(data.output_text || "").trim();
+  if (data && typeof data.text === "string") return data.text.trim();
+  if (data && typeof data.output_text === "string") return data.output_text.trim();
   const chunks = [];
   for (const item of data && data.output || []) {
     for (const content of item && item.content || []) {
-      if (content && content.type === "output_text" && content.text) chunks.push(content.text);
-      if (content && content.type === "text" && content.text) chunks.push(content.text);
+      const text = content && typeof content.text === "string"
+        ? content.text
+        : (content && content.text && typeof content.text.value === "string" ? content.text.value : "");
+      if (text && ["output_text", "text"].includes(content.type)) chunks.push(text);
     }
   }
   return chunks.join("\n").trim();
