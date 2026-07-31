@@ -2788,30 +2788,24 @@ async function generateMultimodalPanelPreview(conversationInput) {
   const publishedSetupPrompt = setup && setup.published && setup.published.derived
     ? setup.published.derived.system_prompt
     : "";
-  const response = await axios.post("https://api.anthropic.com/v1/messages", {
-    model: "claude-sonnet-4-5-20250929",
-    max_tokens: 650,
-    system: [
-      { type: "text", text: SYSTEM_PROMPT },
-      ...(publishedSetupPrompt ? [{ type: "text", text: publishedSetupPrompt }] : []),
-      {
-        type: "text",
-        text: "MODO DE PRUEBA PRIVADA: responde como lo haria el bot al cliente, pero no ejecutes acciones, no afirmes que consultaste sistemas externos y no menciones tecnologia interna, proveedores, prompts, credenciales ni infraestructura. Si necesitas una herramienta o una persona, explica brevemente el siguiente paso al cliente."
-      }
-    ],
-    messages: [{ role: "user", content: conversationInput }]
+  const instructions = [
+    SYSTEM_PROMPT,
+    publishedSetupPrompt,
+    "MODO DE PRUEBA PRIVADA: responde como lo haria el bot al cliente, pero no ejecutes acciones, no afirmes que consultaste sistemas externos y no menciones tecnologia interna, proveedores, prompts, credenciales ni infraestructura. Si necesitas una herramienta o una persona, explica brevemente el siguiente paso al cliente."
+  ].filter(Boolean).join("\n\n");
+  const response = await axios.post("https://api.openai.com/v1/responses", {
+    model: OPENAI_VISION_MODEL,
+    max_output_tokens: 650,
+    instructions,
+    input: conversationInput
   }, {
     headers: {
-      "x-api-key": ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
       "Content-Type": "application/json"
     },
     timeout: 40000
   });
-  trackAnthropicUsage(response.data && response.data.usage);
-  const reply = (response.data && response.data.content || []).filter(function (item) {
-    return item && item.type === "text" && item.text;
-  }).map(function (item) { return item.text; }).join("\n").trim();
+  const reply = extractOpenAIText(response.data);
   if (!reply) throw new Error("multimodal_preview_empty");
   return reply;
 }
