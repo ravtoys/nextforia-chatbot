@@ -1,6 +1,7 @@
 const express = require("express");
 const axios = require("axios");
 const crypto = require("crypto");
+const { EventEmitter } = require("events");
 const path = require("path");
 const { ElevenLabsClient } = require("@elevenlabs/elevenlabs-js");
 const {
@@ -20,6 +21,11 @@ const COMMERCIAL_READINESS = require("./commercial-readiness");
 const renderCustomerPanel = require("./customer-panel");
 const renderSuperAdminPanel = require("./super-admin-panel");
 const renderSuperAdminLogin = require("./super-admin-login");
+const { renderSignatureAdmin, renderSignatureForm } = require("./signature-pages");
+const {
+  SIGNATURE_TOOL,
+  createSignatureService
+} = require("./signature");
 const renderAppointmentPanel = require("./appointment-panel");
 const {
   customerAppointmentSnapshot,
@@ -205,7 +211,7 @@ app.use(express.json({
 app.use("/admin/assets", express.static(path.join(__dirname, "admin-assets"), { maxAge: "1d" }));
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────────
-const BOT_VERSION = "v158-staging-super-admin-delete-clients";  // bump cada release; usado por endpoints /admin/*
+const BOT_VERSION = "v159-nextfor-signature";  // bump cada release; usado por endpoints /admin/*
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "";
 const DASHBOARD_KEY = process.env.DASHBOARD_KEY || "";
 const DASHBOARD_SESSION_COOKIE = "rav_dashboard_session";
@@ -459,6 +465,7 @@ if (!WA_TOKEN) { console.error("WA_TOKEN missing"); process.exit(1); }
 if (!ANTHROPIC_API_KEY) { console.error("ANTHROPIC_API_KEY missing"); process.exit(1); }
 
 const adminRateLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 600 });
+const signatureRateLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 900 });
 const wompiWebhookRateLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 300 });
 const loginRateLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
@@ -469,6 +476,13 @@ const loginRateLimiter = createRateLimiter({
   }
 });
 app.use("/admin", adminRateLimiter);
+app.use("/signature", function protectSignatureCaching(req, res, next) {
+  res.setHeader("cache-control", "no-store, max-age=0");
+  res.setHeader("pragma", "no-cache");
+  res.setHeader("x-robots-tag", "noindex, nofollow, noarchive");
+  next();
+});
+app.use("/signature/api", signatureRateLimiter);
 app.use("/admin", async function revalidateCustomerSession(req, res, next) {
   if (!CUSTOMER_ACCESS_V2_ENABLED) return next();
   const session = readDashboardSession(req);
@@ -899,6 +913,104 @@ function normalizeTurnRow(r) {
     eval: r.eval || undefined,
     _id: r.id
   };
+}
+
+const signatureEvents = new EventEmitter();
+signatureEvents.setMaxListeners(200);
+
+function signaturePayloadFromTurn(turn) {
+  const tools = Array.isArray(turn && turn.tools) ? turn.tools : [];
+  if (!tools.includes(SIGNATURE_TOOL)) return null;
+  const raw = String(turn.botReply || "").replace(/^\[NextforSignature\]\s*/, "");
+  try {
+    return JSON.parse(raw);
+  } catch (_) {
+    return null;
+  }
+}
+
+const signatureStore = {
+  async append(userId, payload) {
+    const rec = {
+      ts: payload.saved_at || new Date().toISOString(),
+      userId,
+      tenantId: DEFAULT_TENANT_ID,
+      userMessage: "",
+      botReply: "[NextforSignature] " + JSON.stringify(payload),
+      tools: [SIGNATURE_TOOL],
+      zeroResultQueries: [],
+      handoff: false,
+      rating: null,
+      numTools: 1,
+      status: "ok",
+      eval: { skip: true, reason: SIGNATURE_TOOL }
+    };
+    if (SUPABASE_ENABLED) await supabaseInsertStrict(rec);
+    conversationLogs.push(rec);
+    if (conversationLogs.length > 300) conversationLogs.shift();
+  },
+  async latest(userId) {
+    if (SUPABASE_ENABLED) {
+      const rows = await supabaseFetchUserRecent(userId, 1);
+      if (rows === null) throw new Error("signature_store_unavailable");
+      const turn = rows.map(normalizeTurnRow).map(signaturePayloadFromTurn).find(Boolean);
+      return turn || null;
+    }
+    return conversationLogs.slice().reverse().filter(function (turn) {
+      return turn.userId === userId;
+    }).map(signaturePayloadFromTurn).find(Boolean) || null;
+  }
+};
+
+const signatureService = createSignatureService({
+  store: signatureStore,
+  persistent: SUPABASE_ENABLED || process.env.NODE_ENV === "test",
+  onUpdate: function (event) {
+    signatureEvents.emit("signature", event);
+  }
+});
+
+const SIGNATURE_STORAGE_BUCKET = "nextfor-signature-private";
+let signatureBucketReady = null;
+
+function encryptSignatureFile(buffer) {
+  if (!DATA_ENCRYPTION_KEY) throw new Error("signature_encryption_unavailable");
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", DATA_ENCRYPTION_KEY, iv);
+  const encrypted = Buffer.concat([cipher.update(buffer), cipher.final()]);
+  return Buffer.concat([Buffer.from("NXFS1"), iv, cipher.getAuthTag(), encrypted]);
+}
+
+function decryptSignatureFile(buffer) {
+  if (!DATA_ENCRYPTION_KEY || !Buffer.isBuffer(buffer) || buffer.length < 34 || buffer.subarray(0, 5).toString() !== "NXFS1") {
+    throw new Error("signature_file_invalid");
+  }
+  const decipher = crypto.createDecipheriv("aes-256-gcm", DATA_ENCRYPTION_KEY, buffer.subarray(5, 17));
+  decipher.setAuthTag(buffer.subarray(17, 33));
+  return Buffer.concat([decipher.update(buffer.subarray(33)), decipher.final()]);
+}
+
+async function ensureSignatureStorageBucket() {
+  if (!SUPABASE_ENABLED) throw new Error("signature_storage_unavailable");
+  if (signatureBucketReady) return signatureBucketReady;
+  signatureBucketReady = axios.post(SUPABASE_URL + "/storage/v1/bucket", {
+    id: SIGNATURE_STORAGE_BUCKET,
+    name: SIGNATURE_STORAGE_BUCKET,
+    public: false,
+    file_size_limit: 12 * 1024 * 1024,
+    allowed_mime_types: null
+  }, { headers: SB_HEADERS, timeout: 8000 }).catch(function (error) {
+    const status = error && error.response && error.response.status;
+    const detail = JSON.stringify(error && error.response && error.response.data || "").toLowerCase();
+    if (status === 409 || detail.includes("already exists") || detail.includes("duplicate")) return true;
+    signatureBucketReady = null;
+    throw error;
+  });
+  return signatureBucketReady;
+}
+
+function signatureStorageUrl(objectKey) {
+  return SUPABASE_URL + "/storage/v1/object/" + SIGNATURE_STORAGE_BUCKET + "/" + objectKey.split("/").map(encodeURIComponent).join("/");
 }
 
 function retargetingRecordId(tenantId) {
@@ -7438,6 +7550,287 @@ function escapeAdminHtml(value) {
     return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char];
   });
 }
+
+function signatureAdminAuth(req, res) {
+  const auth = dashboardAuth(req);
+  if (!auth.ok || auth.role !== "super_admin") {
+    res.status(401).json({ ok: false, error: "unauthorized" });
+    return null;
+  }
+  return auth;
+}
+
+function signatureWriteOriginOk(req) {
+  return isSameOriginRequestFromAny(req, ADMIN_ALLOWED_BASE_URLS);
+}
+
+function signaturePublicUrl(req, token) {
+  const base = PUBLIC_BASE_URL || ((req.secure ? "https" : "http") + "://" + req.get("host"));
+  return base.replace(/\/+$/, "") + "/signature/" + encodeURIComponent(token);
+}
+
+app.get("/signature/:token", (req, res) => {
+  renderSignatureForm(res, { token: req.params.token });
+});
+
+app.get("/signature/api/:token", async (req, res) => {
+  try {
+    const diagnosis = await signatureService.get(req.params.token);
+    if (!diagnosis) {
+      res.status(404).json({ ok: false, error: "signature_not_found" });
+      return;
+    }
+    res.json(Object.assign({ ok: true }, diagnosis));
+  } catch (error) {
+    log("error", "signature_load_failed", { error: String(error && error.message || "").slice(0, 160) });
+    res.status(503).json({ ok: false, error: "signature_store_unavailable" });
+  }
+});
+
+app.patch("/signature/api/:token", async (req, res) => {
+  if (!signatureWriteOriginOk(req)) {
+    res.status(403).json({ ok: false, error: "invalid_request_origin" });
+    return;
+  }
+  try {
+    const state = await signatureService.update(req.params.token, req.body || {});
+    if (!state) {
+      res.status(404).json({ ok: false, error: "signature_not_found" });
+      return;
+    }
+    const diagnosis = await signatureService.get(req.params.token);
+    res.json({ ok: true, state: diagnosis.state, priorities: diagnosis.priorities });
+  } catch (error) {
+    log("error", "signature_save_failed", { error: String(error && error.message || "").slice(0, 160) });
+    res.status(503).json({ ok: false, error: "signature_store_unavailable" });
+  }
+});
+
+app.post("/signature/api/:token/submit", async (req, res) => {
+  if (!signatureWriteOriginOk(req)) {
+    res.status(403).json({ ok: false, error: "invalid_request_origin" });
+    return;
+  }
+  try {
+    const state = await signatureService.submit(req.params.token, req.body || {});
+    if (!state) {
+      res.status(404).json({ ok: false, error: "signature_not_found" });
+      return;
+    }
+    const diagnosis = await signatureService.get(req.params.token);
+    res.json({ ok: true, state: diagnosis.state, priorities: diagnosis.priorities });
+  } catch (error) {
+    if (error && error.code === "signature_incomplete") {
+      res.status(400).json({
+        ok: false,
+        error: error.code,
+        missing: error.missing || [],
+        consent_required: !!error.consent_required
+      });
+      return;
+    }
+    log("error", "signature_submit_failed", { error: String(error && error.message || "").slice(0, 160) });
+    res.status(503).json({ ok: false, error: "signature_store_unavailable" });
+  }
+});
+
+app.post("/signature/api/:token/files", express.raw({ type: "application/octet-stream", limit: "10mb" }), async (req, res) => {
+  if (!signatureWriteOriginOk(req)) {
+    res.status(403).json({ ok: false, error: "invalid_request_origin" });
+    return;
+  }
+  let filename = "";
+  try {
+    filename = decodeURIComponent(String(req.get("x-file-name") || ""));
+  } catch (_) {
+    filename = "";
+  }
+  filename = filename.replace(/[\u0000-\u001f\u007f/\\]/g, "_").trim().slice(0, 180);
+  const contentType = String(req.get("x-file-type") || "application/octet-stream").slice(0, 120);
+  if (!filename || !Buffer.isBuffer(req.body) || !req.body.length || req.body.length > 10 * 1024 * 1024) {
+    res.status(400).json({ ok: false, error: "invalid_signature_file" });
+    return;
+  }
+  try {
+    const diagnosis = await signatureService.get(req.params.token);
+    if (!diagnosis) {
+      res.status(404).json({ ok: false, error: "signature_not_found" });
+      return;
+    }
+    if ((diagnosis.state.files || []).length >= 5) {
+      res.status(400).json({ ok: false, error: "signature_file_limit" });
+      return;
+    }
+    await ensureSignatureStorageBucket();
+    const recordId = diagnosis.state.record_id;
+    const fileId = crypto.randomBytes(12).toString("base64url");
+    const objectKey = recordId + "/" + fileId + ".nxf";
+    const encrypted = encryptSignatureFile(req.body);
+    await axios.post(signatureStorageUrl(objectKey), encrypted, {
+      headers: Object.assign({}, SB_HEADERS, {
+        "Content-Type": "application/octet-stream",
+        "x-upsert": "false"
+      }),
+      maxBodyLength: 12 * 1024 * 1024,
+      timeout: 30000
+    });
+    await signatureService.addFile(req.params.token, {
+      id: fileId,
+      name: filename,
+      size: req.body.length,
+      type: contentType,
+      object_key: objectKey,
+      uploaded_at: new Date().toISOString()
+    });
+    const updated = await signatureService.get(req.params.token);
+    res.status(201).json({ ok: true, state: updated.state });
+  } catch (error) {
+    log("error", "signature_file_upload_failed", { error: String(error && error.message || "").slice(0, 160) });
+    res.status(503).json({ ok: false, error: "signature_storage_unavailable" });
+  }
+});
+
+app.delete("/signature/api/:token/files/:fileId", async (req, res) => {
+  if (!signatureWriteOriginOk(req)) {
+    res.status(403).json({ ok: false, error: "invalid_request_origin" });
+    return;
+  }
+  try {
+    const state = await signatureService.removeFile(req.params.token, req.params.fileId);
+    if (!state) {
+      res.status(404).json({ ok: false, error: "signature_not_found" });
+      return;
+    }
+    const diagnosis = await signatureService.get(req.params.token);
+    res.json({ ok: true, state: diagnosis.state });
+  } catch (error) {
+    res.status(503).json({ ok: false, error: "signature_store_unavailable" });
+  }
+});
+
+app.get("/admin/super-admin/signature", (req, res) => {
+  const auth = dashboardAuth(req);
+  if (!auth.ok) {
+    res.redirect("/admin/super-admin/login");
+    return;
+  }
+  if (auth.role !== "super_admin") {
+    res.redirect("/admin/super-admin/login?reason=role");
+    return;
+  }
+  renderSignatureAdmin(res);
+});
+
+app.get("/admin/signature/prospects", async (req, res) => {
+  if (!signatureAdminAuth(req, res)) return;
+  try {
+    res.json({ ok: true, prospects: await signatureService.list() });
+  } catch (error) {
+    res.status(503).json({ ok: false, error: "signature_store_unavailable" });
+  }
+});
+
+app.post("/admin/signature/prospects", async (req, res) => {
+  const auth = signatureAdminAuth(req, res);
+  if (!auth) return;
+  try {
+    const state = await signatureService.create(auth.name || auth.username);
+    const detail = await signatureService.get(state.token);
+    res.status(201).json({
+      ok: true,
+      prospect: {
+        record_id: detail.state.record_id,
+        token: state.token,
+        status: detail.state.status,
+        progress: detail.state.progress,
+        updated_at: detail.state.updated_at
+      },
+      url: signaturePublicUrl(req, state.token)
+    });
+  } catch (error) {
+    const code = error && error.code === "signature_persistence_required"
+      ? "signature_persistence_required"
+      : "signature_store_unavailable";
+    res.status(503).json({ ok: false, error: code });
+  }
+});
+
+app.get("/admin/signature/prospects/:recordId", async (req, res) => {
+  if (!signatureAdminAuth(req, res)) return;
+  try {
+    const detail = await signatureService.adminDetail(req.params.recordId);
+    if (!detail) {
+      res.status(404).json({ ok: false, error: "signature_not_found" });
+      return;
+    }
+    res.json(Object.assign({ ok: true }, detail));
+  } catch (error) {
+    res.status(503).json({ ok: false, error: "signature_store_unavailable" });
+  }
+});
+
+app.get("/admin/signature/prospects/:recordId/files/:fileId", async (req, res) => {
+  if (!signatureAdminAuth(req, res)) return;
+  try {
+    const file = await signatureService.adminFile(req.params.recordId, req.params.fileId);
+    if (!file) {
+      res.status(404).json({ ok: false, error: "signature_file_not_found" });
+      return;
+    }
+    const stored = await axios.get(signatureStorageUrl(file.object_key), {
+      headers: SB_HEADERS,
+      responseType: "arraybuffer",
+      timeout: 30000
+    });
+    const clear = decryptSignatureFile(Buffer.from(stored.data));
+    const fallbackName = file.name.replace(/[^\w.\- ]/g, "_") || "documento";
+    res.setHeader("content-type", file.type || "application/octet-stream");
+    res.setHeader("content-length", String(clear.length));
+    res.setHeader("content-disposition", "attachment; filename=\"" + fallbackName.replace(/"/g, "") + "\"; filename*=UTF-8''" + encodeURIComponent(file.name));
+    res.send(clear);
+  } catch (error) {
+    log("error", "signature_file_download_failed", { error: String(error && error.message || "").slice(0, 160) });
+    res.status(503).json({ ok: false, error: "signature_storage_unavailable" });
+  }
+});
+
+app.get("/admin/signature/config", async (req, res) => {
+  if (!signatureAdminAuth(req, res)) return;
+  try {
+    res.json({ ok: true, config: await signatureService.getConfig(true) });
+  } catch (error) {
+    res.status(503).json({ ok: false, error: "signature_store_unavailable" });
+  }
+});
+
+app.put("/admin/signature/config", async (req, res) => {
+  const auth = signatureAdminAuth(req, res);
+  if (!auth) return;
+  try {
+    const config = await signatureService.saveConfig(req.body || {}, auth.name || auth.username);
+    res.json({ ok: true, config });
+  } catch (error) {
+    res.status(400).json({ ok: false, error: "invalid_signature_config" });
+  }
+});
+
+app.get("/admin/signature/events", (req, res) => {
+  if (!signatureAdminAuth(req, res)) return;
+  res.setHeader("content-type", "text/event-stream");
+  res.setHeader("cache-control", "no-cache, no-transform");
+  res.setHeader("connection", "keep-alive");
+  res.flushHeaders();
+  res.write("retry: 2500\n\n");
+  const send = function (event) {
+    res.write("event: signature\ndata: " + JSON.stringify(event) + "\n\n");
+  };
+  const heartbeat = setInterval(function () { res.write(": keepalive\n\n"); }, 20000);
+  signatureEvents.on("signature", send);
+  req.on("close", function () {
+    clearInterval(heartbeat);
+    signatureEvents.off("signature", send);
+  });
+});
 
 app.get("/admin/super-admin", async (req, res) => {
   const auth = dashboardAuth(req);

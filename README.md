@@ -118,6 +118,8 @@ Bot de atención al cliente para RAV Toys (Medellín, Colombia), preparado para 
 | `GET /admin/access-model` | Modelo futuro de acceso: `super_admin` NexforIA y roles Admin del cliente |
 | `GET /admin/super-admin` | Panel de plataforma NexforIA; acceso exclusivo para `super_admin` |
 | `GET /admin/super-admin/login` | Entrada interna y separada para usuarios Super Admin de NexforIA |
+| `GET /admin/super-admin/signature` | Consola Nextfor Signature: enlaces únicos, respuestas en vivo, resúmenes y editor del formulario |
+| `GET /signature/:token` | Diagnóstico privado y reutilizable de un prospecto; autoguarda y permite continuar después |
 | `GET /admin/integrations/rav/test` | Super admin: prueba segura de la integración #1 sin enviar mensajes reales |
 | `GET /admin/health` | Estado mínimo público; con sesión o `X-Dashboard-Key` incluye Shopify/Meta/Supabase y readiness |
 | `GET /admin/stats` | Snapshot protegido del estado: handoffs activos, ratings pendientes, carritos en curso |
