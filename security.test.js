@@ -8,6 +8,7 @@ const {
   isSameOriginRequest,
   parseEncryptionKey,
   safeInlineJson,
+  securityHeaders,
   validMetaSignature,
   validateProductionConfig
 } = require("./security");
@@ -32,6 +33,16 @@ assert.strictEqual(validMetaSignature(body, "", "", false), false);
 assert.strictEqual(validMetaSignature(body, "", "", true), true);
 
 assert(!safeInlineJson("</script><script>alert(1)</script>").includes("</script>"));
+
+function responseHeadersFor(path) {
+  const headers = {};
+  securityHeaders({ path, originalUrl: path, secure: true, get: function () { return ""; } }, {
+    setHeader(name, value) { headers[name] = value; }
+  }, function () {});
+  return headers;
+}
+assert(responseHeadersFor("/admin/panel")["Permissions-Policy"].includes("microphone=(self)"));
+assert(responseHeadersFor("/")["Permissions-Policy"].includes("microphone=()"));
 
 function request(headers, protocol) {
   return {
