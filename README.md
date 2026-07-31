@@ -19,6 +19,7 @@ Bot de atención al cliente para RAV Toys (Medellín, Colombia), preparado para 
 - ⭐ **Calificaciones** — pide rating 1-5 al cierre o post-handoff; rating bajo escala a humano
 - 🤝 **Handoff a humano** — Eliana (asesora comercial) recibe alertas en su WhatsApp
 - 🙈 **Manejo cálido de multimedia** — explica que aún no ve imágenes y guía al cliente a mandar links
+- **Multimodal Prototype Agent** — feature flags para probar notas de voz e imágenes por tenant antes de llevarlo al producto principal
 
 ---
 
@@ -65,6 +66,14 @@ Bot de atención al cliente para RAV Toys (Medellín, Colombia), preparado para 
 | `MESSENGER_GRAPH_BASE_URL` | Host de Graph API para Messenger (default: `https://graph.facebook.com`) |
 | `META_GRAPH_VERSION` | Versión de Graph API para Instagram y Messenger (default: `v23.0`) |
 | `ANTHROPIC_API_KEY` | API key de Anthropic (Claude) |
+| `OPENAI_API_KEY` | API key usada solo por el Multimodal Prototype Agent cuando se activan voz o imagen |
+| `OPENAI_TRANSCRIPTION_MODEL` | Modelo de transcripción del prototipo multimodal (default: `gpt-4o-mini-transcribe`) |
+| `OPENAI_VISION_MODEL` | Modelo de análisis de imágenes del prototipo multimodal (default: `gpt-4.1-mini`) |
+| `MULTIMODAL_AGENT_ENABLED` | Gate maestro del agente prototipo de audio/imagen; mantener `0` hasta pruebas controladas |
+| `MULTIMODAL_AGENT_TENANT_IDS` | Tenants permitidos para el prototipo, CSV; RAV usa `rav-toys` |
+| `MULTIMODAL_VOICE_INPUT_ENABLED` | Permite transcribir notas de voz de WhatsApp y pasarlas al bot como texto controlado |
+| `MULTIMODAL_IMAGE_INPUT_ENABLED` | Permite analizar imágenes de WhatsApp y pasar hallazgos al bot |
+| `MULTIMODAL_VOICE_REPLIES_ENABLED` | Reservado para respuestas de voz con ElevenLabs; mantener `0` hasta validar envío de audio |
 | `AI_STANDARD_MAX_TOKENS` | Máximo de salida para conversaciones normales (default: `1000`) |
 | `AI_STANDARD_HISTORY_MESSAGES` | Historial usado en conversaciones normales (default: `8`) |
 | `AI_ENGAGED_MAX_TOKENS` | Máximo de salida para consultas comerciales (default: `1400`) |
