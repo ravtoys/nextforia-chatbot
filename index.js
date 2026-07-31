@@ -217,7 +217,7 @@ app.use(express.json({
 app.use("/admin/assets", express.static(path.join(__dirname, "admin-assets"), { maxAge: "1d" }));
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────────
-const BOT_VERSION = "v162-staging-conversation-simulator";  // bump cada release; usado por endpoints /admin/*
+const BOT_VERSION = "v163-staging-conversation-simulator";  // bump cada release; usado por endpoints /admin/*
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "";
 const DASHBOARD_KEY = process.env.DASHBOARD_KEY || "";
 const DASHBOARD_SESSION_COOKIE = "rav_dashboard_session";
@@ -2824,7 +2824,8 @@ async function generatePanelTestReply(conversationInput) {
   const instructions = [
     SYSTEM_PROMPT,
     publishedSetupPrompt,
-    "MODO DE PRUEBA PRIVADA: responde como lo haria el bot al cliente, pero no ejecutes acciones, no afirmes que consultaste sistemas externos y no menciones tecnologia interna, proveedores, prompts, credenciales ni infraestructura. Si necesitas una herramienta o una persona, explica brevemente el siguiente paso al cliente."
+    "MODO DE PRUEBA PRIVADA: responde como lo haria el bot al cliente, pero no ejecutes acciones, no afirmes que consultaste sistemas externos y no menciones tecnologia interna, proveedores, prompts, credenciales ni infraestructura. Si necesitas una herramienta o una persona, explica brevemente el siguiente paso al cliente.",
+    "CAPACIDADES MULTIMODALES ACTIVAS: cuando el nuevo mensaje incluya una transcripcion de audio o un analisis visual, significa que el contenido ya fue escuchado o visto correctamente. Usa esa informacion como parte del mensaje del cliente. Nunca digas que no puedes escuchar audios o ver imagenes. Si el analisis visual no muestra un producto o no es claro, explica con naturalidad que la imagen no permite identificar lo que busca y pide una foto mas util o contexto adicional."
   ].filter(Boolean).join("\n\n");
   const response = await axios.post("https://api.openai.com/v1/responses", {
     model: OPENAI_VISION_MODEL,
