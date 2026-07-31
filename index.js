@@ -126,6 +126,8 @@ const {
   serviceAreaCheckForPhone
 } = require("./service-area");
 const {
+  buildImageConversationInput,
+  buildVoiceConversationInput,
   createMultimodalAgent,
   multimodalConfigFromEnv
 } = require("./multimodal-agent");
@@ -215,7 +217,7 @@ app.use(express.json({
 app.use("/admin/assets", express.static(path.join(__dirname, "admin-assets"), { maxAge: "1d" }));
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────────
-const BOT_VERSION = "v160-staging-multimodal-prototype";  // bump cada release; usado por endpoints /admin/*
+const BOT_VERSION = "v161-staging-multimodal-test-panel";  // bump cada release; usado por endpoints /admin/*
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "";
 const DASHBOARD_KEY = process.env.DASHBOARD_KEY || "";
 const DASHBOARD_SESSION_COOKIE = "rav_dashboard_session";
@@ -2779,6 +2781,39 @@ async function analyzeMultimodalImage(downloaded, media) {
   const text = extractOpenAIText(response.data);
   if (!text) throw new Error("vision_empty");
   return { text, provider: "openai", model: OPENAI_VISION_MODEL };
+}
+
+async function generateMultimodalPanelPreview(conversationInput) {
+  const setup = await loadBotSetup(false);
+  const publishedSetupPrompt = setup && setup.published && setup.published.derived
+    ? setup.published.derived.system_prompt
+    : "";
+  const response = await axios.post("https://api.anthropic.com/v1/messages", {
+    model: "claude-sonnet-4-5-20250929",
+    max_tokens: 650,
+    system: [
+      { type: "text", text: SYSTEM_PROMPT },
+      ...(publishedSetupPrompt ? [{ type: "text", text: publishedSetupPrompt }] : []),
+      {
+        type: "text",
+        text: "MODO DE PRUEBA PRIVADA: responde como lo haria el bot al cliente, pero no ejecutes acciones, no afirmes que consultaste sistemas externos y no menciones tecnologia interna, proveedores, prompts, credenciales ni infraestructura. Si necesitas una herramienta o una persona, explica brevemente el siguiente paso al cliente."
+      }
+    ],
+    messages: [{ role: "user", content: conversationInput }]
+  }, {
+    headers: {
+      "x-api-key": ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+      "Content-Type": "application/json"
+    },
+    timeout: 40000
+  });
+  trackAnthropicUsage(response.data && response.data.usage);
+  const reply = (response.data && response.data.content || []).filter(function (item) {
+    return item && item.type === "text" && item.text;
+  }).map(function (item) { return item.text; }).join("\n").trim();
+  if (!reply) throw new Error("multimodal_preview_empty");
+  return reply;
 }
 
 async function sendLocation(to, lat, lng, name, address) {
@@ -9080,6 +9115,65 @@ app.post("/admin/panel/order-status-test", async (req, res) => {
       })
     } : null
   });
+});
+
+app.post("/admin/panel/multimodal-test", express.raw({
+  type: function () { return true; },
+  limit: "16mb"
+}), async (req, res) => {
+  if (!adminAuthOk(req, "admin")) {
+    res.status(401).json({ ok: false, error: "unauthorized" });
+    return;
+  }
+  if (!OPENAI_API_KEY) {
+    res.status(503).json({
+      ok: false,
+      error: "multimodal_provider_not_configured",
+      message: "La credencial de voz e imágenes todavía no está activa en staging."
+    });
+    return;
+  }
+  const kind = String(req.query.kind || "").trim().toLowerCase();
+  if (!["audio", "image"].includes(kind)) {
+    res.status(400).json({ ok: false, error: "invalid_media_kind", message: "Elige una nota de voz o una imagen." });
+    return;
+  }
+  const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+  const maxBytes = kind === "audio" ? MULTIMODAL_CONFIG.max_audio_bytes : MULTIMODAL_CONFIG.max_image_bytes;
+  if (!buffer.length || buffer.length > maxBytes) {
+    res.status(400).json({ ok: false, error: "invalid_media_size", message: "El archivo está vacío o supera el tamaño permitido." });
+    return;
+  }
+  const mimeType = String(req.get("content-type") || (kind === "audio" ? "audio/ogg" : "image/jpeg")).split(";")[0].trim().toLowerCase();
+  if (mimeType !== "application/octet-stream" && !mimeType.startsWith(kind + "/")) {
+    res.status(415).json({ ok: false, error: "invalid_media_type", message: "El archivo no coincide con el tipo de prueba seleccionado." });
+    return;
+  }
+  try {
+    const media = { kind, mime_type: mimeType };
+    const downloaded = { buffer, mime_type: mimeType, file_size: buffer.length };
+    const providerResult = kind === "audio"
+      ? await transcribeMultimodalAudio(downloaded, media)
+      : await analyzeMultimodalImage(downloaded, media);
+    const sourceText = String(providerResult && providerResult.text || "").trim();
+    const conversationInput = kind === "audio"
+      ? buildVoiceConversationInput(sourceText, providerResult)
+      : buildImageConversationInput(sourceText, "");
+    const botReply = await generateMultimodalPanelPreview(conversationInput);
+    res.json({
+      ok: true,
+      kind,
+      source_text: sourceText,
+      bot_reply: botReply,
+      provider: providerResult.provider,
+      model: providerResult.model,
+      public_activation: false,
+      bot_version: BOT_VERSION
+    });
+  } catch (error) {
+    log("warn", "multimodal_panel_test_failed", { kind, error: String(error && error.message || "unknown").slice(0, 160) });
+    res.status(502).json({ ok: false, error: "multimodal_test_failed", message: "No pudimos completar esta prueba. Revisa la credencial de staging e inténtalo de nuevo." });
+  }
 });
 
 app.get("/admin/panel/smoke-check", async (req, res) => {
