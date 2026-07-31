@@ -71,7 +71,11 @@ const PANEL_ICONS = {
   sparkles: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0z"></path></svg>',
   settings: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"></path><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.5 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.5a1.7 1.7 0 0 0-.34-1.88L4.2 6.56a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.5 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.14.38.37.72.68 1 .3.26.7.4 1.1.4H21a2 2 0 1 1 0 4h-.09c-.4 0-.8.14-1.1.4-.2.18-.34.38-.41.6Z"></path></svg>',
   clock: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>',
-  instagram: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="20" x="2" y="2" rx="5" ry="5"></rect><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path><line x1="17.5" x2="17.51" y1="6.5" y2="6.5"></line></svg>'
+  instagram: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="20" x="2" y="2" rx="5" ry="5"></rect><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path><line x1="17.5" x2="17.51" y1="6.5" y2="6.5"></line></svg>',
+  send: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"></path><path d="M22 2 11 13"></path></svg>',
+  image: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"></rect><circle cx="9" cy="9" r="2"></circle><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path></svg>',
+  mic: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" x2="12" y1="19" y2="22"></line></svg>',
+  refresh: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.17 6.55L3 16"></path><path d="M3 21v-5h5"></path><path d="M3 12A9 9 0 0 1 18.17 5.45L21 8"></path><path d="M21 3v5h-5"></path></svg>'
 };
 
 module.exports = function renderCustomerPanel(res, options) {
@@ -100,8 +104,8 @@ module.exports = function renderCustomerPanel(res, options) {
   // dejaría: si no, el header y el módulo saltan al cargar (el "parpadeo").
   // Estos mapas son un espejo exacto de los del script de cliente (showTab).
   const summarySubtitle = "Resultados de " + (panelContext.v2 ? panelContext.assignedBotName : "tu bot de atención") + " · Últimos 7 días";
-  const PAGE_TITLES = { summary: "Resumen", conversations: "Conversaciones", appointments: "Citas", plan: "Mi plan", channels: "Finaliza el entrenamiento", setup: "Configuración de tu Nextfor IA", retargeting: "Seguimientos comerciales", tests: "Pruebas" };
-  const PAGE_SUBTITLES = { summary: summarySubtitle, conversations: "La IA atiende y te deja solo lo que necesita de ti.", appointments: "Tu agenda llenándose, sin perseguir confirmaciones.", plan: "Plan, módulos y consumo", channels: "Dile a tu Nextfor dónde debe atender", setup: "Tu negocio, tu voz y tus reglas en un solo lugar", retargeting: "Cola segura, aprobaciones, cancelaciones y auditoría", tests: "Herramientas seguras para validar el bot." };
+  const PAGE_TITLES = { summary: "Resumen", conversations: "Conversaciones", appointments: "Citas", plan: "Mi plan", channels: "Finaliza el entrenamiento", setup: "Configuración de tu Nextfor IA", retargeting: "Seguimientos comerciales", tests: "Prueba tu bot" };
+  const PAGE_SUBTITLES = { summary: summarySubtitle, conversations: "La IA atiende y te deja solo lo que necesita de ti.", appointments: "Tu agenda llenándose, sin perseguir confirmaciones.", plan: "Plan, módulos y consumo", channels: "Dile a tu Nextfor dónde debe atender", setup: "Tu negocio, tu voz y tus reglas en un solo lugar", retargeting: "Cola segura, aprobaciones, cancelaciones y auditoría", tests: "Conversa como lo hará un cliente por WhatsApp." };
   const initialTitle = PAGE_TITLES[initialTab] || "Conversaciones";
   const initialSubtitle = PAGE_SUBTITLES[initialTab] || PAGE_SUBTITLES.conversations;
   const SECTION_BY_TAB = { summary: "panel-summary", conversations: "panel-inbox", appointments: "panel-appointments", plan: "panel-plan", channels: "panel-channels", setup: "panel-setup", retargeting: "panel-retargeting", tests: "panel-tests" };
@@ -577,19 +581,54 @@ input:focus,textarea:focus{outline:3px solid rgba(18,168,244,.16);border-color:v
 .testCard{padding:22px}
 .formStack{display:grid;gap:10px;margin-top:14px}
 .resultBox{border-top:1px solid var(--line);padding-top:12px;margin-top:12px;color:var(--slate-500);font-size:13px}
-.multimodalTestCard{grid-column:1/-1}
-.multimodalTestHead{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
-.multimodalTestState{display:inline-flex;align-items:center;gap:7px;border-radius:999px;background:var(--amber-100);color:#95610C;padding:7px 10px;font-size:11px;font-weight:900;white-space:nowrap}
-.multimodalTestState.ready{background:var(--green-100);color:#087E50}
-.multimodalKinds{display:flex;gap:8px;margin-top:16px}
-.multimodalKinds button{min-height:38px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--slate-700);padding:0 14px;font-size:13px;font-weight:850}
-.multimodalKinds button.active{border-color:#9DDEFC;background:var(--cyan-100);color:#057BB6}
-.multimodalUpload{margin-top:12px;border:1px dashed #AFC4DA;border-radius:16px;background:#F8FBFE;padding:18px;display:grid;gap:10px}
-.multimodalUpload input{padding:12px;background:#fff}
-.multimodalOutput{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
-.multimodalOutput section{border:1px solid var(--line);border-radius:14px;padding:14px;background:#fff;min-width:0}
-.multimodalOutput small{display:block;color:#057BB6;font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:.08em;margin-bottom:7px}
-.multimodalOutput p{color:var(--slate-700);font-size:13px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.testChatShell{grid-column:1/-1;max-width:980px;width:100%;margin:0 auto;border:1px solid #D5DEE9;border-radius:18px;overflow:hidden;background:#EEF3F6;box-shadow:0 18px 45px rgba(8,22,52,.1)}
+.testChatHead{height:70px;display:flex;align-items:center;gap:12px;padding:0 18px;background:#fff;border-bottom:1px solid var(--line)}
+.testChatAvatar{width:42px;height:42px;border-radius:12px;background:var(--navy-900);color:#fff;display:grid;place-items:center;flex:0 0 auto}
+.testChatAvatar svg{width:22px;height:22px}
+.testChatIdentity{min-width:0;flex:1}
+.testChatIdentity strong{display:block;color:var(--navy-900);font-size:14px;font-weight:950}
+.testChatIdentity span{display:flex;align-items:center;gap:6px;margin-top:3px;color:var(--slate-500);font-size:11px;font-weight:750}
+.testChatOnline{width:7px;height:7px;border-radius:50%;background:#18B978}
+.testChatReset,.testChatTool,.testChatSend{width:42px;height:42px;border:0;border-radius:12px;display:grid;place-items:center;cursor:pointer;flex:0 0 auto}
+.testChatReset{background:var(--slate-100);color:var(--slate-600)}
+.testChatReset:hover,.testChatTool:hover{background:#DFE8F1;color:var(--navy-800)}
+.testChatMessages{height:min(58vh,610px);min-height:430px;overflow:auto;padding:22px clamp(16px,4vw,44px);display:flex;flex-direction:column;gap:10px;scroll-behavior:smooth}
+.testChatDay{align-self:center;background:rgba(255,255,255,.86);border:1px solid rgba(198,209,224,.7);border-radius:999px;padding:5px 10px;color:var(--slate-500);font-size:10px;font-weight:850}
+.testChatRow{display:flex;align-items:flex-end;gap:8px;max-width:78%}
+.testChatRow.user{align-self:flex-end;flex-direction:row-reverse}
+.testChatRow.assistant{align-self:flex-start}
+.testChatBubble{position:relative;border-radius:14px;padding:10px 12px 7px;background:#fff;color:var(--navy-900);box-shadow:0 2px 5px rgba(8,22,52,.08);font-size:13.5px;line-height:1.48;white-space:pre-wrap;overflow-wrap:anywhere}
+.testChatRow.user .testChatBubble{background:#DDF5E8;border-bottom-right-radius:4px}
+.testChatRow.assistant .testChatBubble{border-bottom-left-radius:4px}
+.testChatRow.error .testChatBubble{background:#FFF0F0;color:#A72F2F}
+.testChatTime{display:block;margin-top:4px;color:#7E8BA0;font-size:9.5px;text-align:right;line-height:1}
+.testChatImage{display:block;width:min(320px,52vw);max-height:300px;object-fit:cover;border-radius:10px;margin-bottom:7px;background:#DDE5EC}
+.testChatAudio{display:block;width:min(290px,58vw);height:36px}
+.testVoiceBubble{min-width:220px;display:flex;align-items:center;gap:10px}
+.testVoicePlay{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:#168D60;color:#fff}
+.testVoiceWave{height:24px;display:flex;align-items:center;gap:2px;flex:1}
+.testVoiceWave i{display:block;width:3px;border-radius:999px;background:#6B9A88}
+.testVoiceWave i:nth-child(1),.testVoiceWave i:nth-child(7){height:7px}.testVoiceWave i:nth-child(2),.testVoiceWave i:nth-child(6){height:13px}.testVoiceWave i:nth-child(3),.testVoiceWave i:nth-child(5){height:20px}.testVoiceWave i:nth-child(4){height:24px}
+.testVoiceLabel{font-size:10px;color:#527466;font-weight:850;white-space:nowrap}
+.testChatTyping{align-self:flex-start;display:flex;gap:4px;align-items:center;background:#fff;border-radius:14px 14px 14px 4px;padding:13px 15px;box-shadow:0 2px 5px rgba(8,22,52,.08)}
+.testChatTyping[hidden]{display:none}
+.testChatTyping i{width:6px;height:6px;border-radius:50%;background:#8996A8;animation:testTyping 1.1s infinite ease-in-out}
+.testChatTyping i:nth-child(2){animation-delay:.14s}.testChatTyping i:nth-child(3){animation-delay:.28s}
+@keyframes testTyping{0%,60%,100%{transform:translateY(0);opacity:.45}30%{transform:translateY(-3px);opacity:1}}
+.testChatComposerWrap{background:#fff;border-top:1px solid var(--line);padding:10px 12px}
+.testChatComposer{display:flex;align-items:flex-end;gap:7px}
+.testChatTool{background:var(--slate-100);color:var(--slate-600)}
+.testChatComposer textarea{min-height:42px;max-height:110px;resize:none;flex:1;border:1px solid var(--line);border-radius:14px;padding:11px 13px;font:650 13.5px/1.4 var(--font-body);color:var(--navy-900);outline:0}
+.testChatComposer textarea:focus{border-color:#8BCFBB;box-shadow:0 0 0 3px rgba(22,141,96,.1)}
+.testChatSend{background:#168D60;color:#fff}
+.testChatSend:hover{background:#117B53}
+.testChatSend:disabled,.testChatTool:disabled{opacity:.45;cursor:not-allowed}
+.testChatSafety{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:7px;color:var(--slate-400);font-size:9.5px;font-weight:800}
+.technicalTests{grid-column:1/-1;border-top:1px solid var(--line);margin-top:2px;padding-top:2px}
+.technicalTests summary{cursor:pointer;color:var(--slate-600);font-size:12px;font-weight:900;padding:12px 2px;list-style:none}
+.technicalTests summary::-webkit-details-marker{display:none}
+.technicalTests[open] summary{color:var(--navy-800)}
+.technicalTestGrid{display:grid;grid-template-columns:1fr 1fr;gap:18px;padding-top:8px}
 .resultItem{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--slate-100);border-radius:12px;padding:10px;margin-top:7px}
 .resultItem a{color:var(--navy-700);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .statusLine{min-height:28px;color:var(--slate-500);font-size:12px;padding:0 14px 12px}
@@ -600,7 +639,7 @@ input:focus,textarea:focus{outline:3px solid rgba(18,168,244,.16);border-color:v
   .navItem{min-width:max-content}
   .whatsappCard{display:none}
   .summary,.bottomGrid,.metricRow,.testGrid,.planHero,.planGrid,.rescueGrid,.refPromoGrid,.moduleHero,.appointmentGrid,.moduleInfoGrid{grid-template-columns:1fr 1fr}
-  .multimodalOutput{grid-template-columns:1fr}
+  .technicalTestGrid{grid-template-columns:1fr}
   .transparencyGrid{grid-template-columns:1fr 1fr}
   .inboxShell{grid-template-columns:300px 1fr}
   .profileColumn{display:none}
@@ -723,6 +762,14 @@ input:focus,textarea:focus{outline:3px solid rgba(18,168,244,.16);border-color:v
   .channelsHero{padding:22px 20px;border-radius:20px}.channelsHero h3{font-size:25px}.metaConnectionSteps,.connectionHubGrid{grid-template-columns:1fr}.channelConnectCard{grid-template-columns:48px 1fr;padding:16px}.channelConnectIcon{width:48px;height:48px;border-radius:14px}.channelConnectActions{grid-column:1/-1;justify-content:stretch;max-width:none}.channelConnectActions .primaryBtn,.channelConnectActions .ghostBtn,.channelAssetSelect{flex:1;max-width:none}
   .refCode{display:grid}
   .testGrid{grid-template-columns:1fr}
+  .testChatShell{border-radius:14px}
+  .testChatHead{height:62px;padding:0 12px}
+  .testChatMessages{height:calc(100vh - 360px);min-height:390px;padding:16px 12px}
+  .testChatRow{max-width:91%}
+  .testChatImage{width:min(280px,68vw)}
+  .testChatComposerWrap{padding:8px}
+  .testChatTool,.testChatSend{width:40px;height:40px;border-radius:11px}
+  .testChatComposer textarea{min-height:40px;padding:10px 11px}
 }
 
 /* Conversaciones v2 · handoff Nextfor IA */
@@ -1442,14 +1489,28 @@ ${customerAppointments.styles}
 
       <section class="${viewClass('panel-tests')}" id="panel-tests">
         <div class="testGrid">
-          <article class="card testCard multimodalTestCard">
-            <div class="multimodalTestHead"><div><h3 class="sectionTitle">Agente de voz e imágenes</h3><p class="muted">Prueba privada de staging. No envía mensajes ni cambia el bot público.</p></div><span class="multimodalTestState" id="multimodalTestState">Listo para probar</span></div>
-            <div class="multimodalKinds" role="group" aria-label="Tipo de archivo"><button class="active" id="multimodalAudioBtn" type="button" onclick="setMultimodalKind('audio')">Nota de voz</button><button id="multimodalImageBtn" type="button" onclick="setMultimodalKind('image')">Imagen</button></div>
-            <form class="multimodalUpload" id="multimodalTestForm"><label for="multimodalFile" id="multimodalFileLabel">Selecciona una nota de voz</label><input id="multimodalFile" type="file" accept="audio/*" required><button class="primaryBtn" id="multimodalTestBtn" type="submit">Analizar y responder</button></form>
-            <div class="multimodalOutput"><section><small id="multimodalSourceLabel">Transcripción</small><p id="multimodalSource">Aún no has ejecutado una prueba.</p></section><section><small>Respuesta del bot</small><p id="multimodalReply">Aún no has ejecutado una prueba.</p></section></div>
-          </article>
-          <article class="card testCard"><h3 class="sectionTitle">Buscar producto</h3><p class="muted">Consulta el catálogo visible para clientes.</p><form id="searchTestForm" class="formStack"><input id="testQuery" name="q" maxlength="80" placeholder="Ej. carro control remoto" required><button class="primaryBtn" id="searchTestBtn" type="submit">Probar búsqueda</button></form><div class="resultBox" id="searchTestResult">Aún no se ha ejecutado una búsqueda.</div></article>
-          <article class="card testCard"><h3 class="sectionTitle">Consultar pedido</h3><p class="muted">Valida número y nombre sin mostrar datos sensibles.</p><form id="orderTestForm" class="formStack"><input id="orderNumber" maxlength="80" placeholder="Número de pedido" required><input id="customerName" maxlength="120" placeholder="Nombre completo" required><input id="phoneOrEmail" maxlength="160" placeholder="Teléfono o correo opcional"><button class="primaryBtn" id="orderTestBtn" type="submit">Consultar estado</button></form><div class="resultBox" id="orderTestResult">Aún no se ha consultado un pedido.</div></article>
+          <section class="testChatShell" aria-label="Conversación de prueba con ${escapeHtml(supportBotName)}">
+            <header class="testChatHead"><span class="testChatAvatar">${PANEL_ICONS.bot}</span><div class="testChatIdentity"><strong>${escapeHtml(supportBotName)}</strong><span><i class="testChatOnline"></i>Simulación privada</span></div><button class="testChatReset" type="button" onclick="resetTestConversation()" aria-label="Reiniciar conversación" title="Reiniciar conversación">${PANEL_ICONS.refresh}</button></header>
+            <div class="testChatMessages" id="testChatMessages" role="log" aria-live="polite"></div>
+            <div class="testChatComposerWrap">
+              <form class="testChatComposer" id="testChatForm">
+                <input id="testImageFile" type="file" accept="image/*" onchange="sendTestMedia('image',this)" hidden>
+                <input id="testAudioFile" type="file" accept="audio/*" onchange="sendTestMedia('audio',this)" hidden>
+                <button class="testChatTool" type="button" onclick="chooseTestMedia('image')" aria-label="Enviar imagen" title="Enviar imagen">${PANEL_ICONS.image}</button>
+                <button class="testChatTool" type="button" onclick="chooseTestMedia('audio')" aria-label="Enviar nota de voz" title="Enviar nota de voz">${PANEL_ICONS.mic}</button>
+                <textarea id="testChatInput" rows="1" maxlength="1200" placeholder="Escribe como si fueras el cliente…" aria-label="Mensaje de prueba"></textarea>
+                <button class="testChatSend" id="testChatSend" type="submit" aria-label="Enviar mensaje" title="Enviar mensaje">${PANEL_ICONS.send}</button>
+              </form>
+              <div class="testChatSafety">Simulación privada · ningún mensaje sale a WhatsApp</div>
+            </div>
+          </section>
+          <details class="technicalTests">
+            <summary>Pruebas técnicas</summary>
+            <div class="technicalTestGrid">
+              <article class="card testCard"><h3 class="sectionTitle">Buscar producto</h3><p class="muted">Consulta el catálogo visible para clientes.</p><form id="searchTestForm" class="formStack"><input id="testQuery" name="q" maxlength="80" placeholder="Ej. carro control remoto" required><button class="primaryBtn" id="searchTestBtn" type="submit">Probar búsqueda</button></form><div class="resultBox" id="searchTestResult">Aún no se ha ejecutado una búsqueda.</div></article>
+              <article class="card testCard"><h3 class="sectionTitle">Consultar pedido</h3><p class="muted">Valida número y nombre sin mostrar datos sensibles.</p><form id="orderTestForm" class="formStack"><input id="orderNumber" maxlength="80" placeholder="Número de pedido" required><input id="customerName" maxlength="120" placeholder="Nombre completo" required><input id="phoneOrEmail" maxlength="160" placeholder="Teléfono o correo opcional"><button class="primaryBtn" id="orderTestBtn" type="submit">Consultar estado</button></form><div class="resultBox" id="orderTestResult">Aún no se ha consultado un pedido.</div></article>
+            </div>
+          </details>
         </div>
       </section>
     </div>
@@ -1480,7 +1541,7 @@ ${customerAppointments.styles}
 </div>
 <div class="panelVersionFixed" aria-label="Versión del Customer Panel">Versión ${escapeHtml(botVersion)}</div>
 <script>
-var INITIAL_TAB=${safeJson(initialTab)},INITIAL_CHANNEL=${safeJson(initialChannel)},SERVER_ROLE=${safeJson(auth.role)},SERVER_CAPABILITIES=${safeJson(capabilities)},PANEL_DATA_PATH=${safeJson(dataPath)},PANEL_HEALTH_PATH=${safeJson(healthPath)},PANEL_SETUP_PATH=${safeJson(setupPath)},PANEL_ONBOARDING_PATH="/admin/client-onboarding/data",PANEL_RETARGETING_PATH=${safeJson(retargetingPath)},PANEL_APPOINTMENTS_PATH=${safeJson(appointmentsPath)},PANEL_LOGIN_PATH=${safeJson(loginPath)},DEMO_MODE=${safeJson(demoMode)},PANEL_CONTEXT=${safeJson(panelContext)},PANEL_CHECK_ICON=${safeJson(PANEL_ICONS.check)},PANEL_PAYMENTS_ENABLED=${options.paymentsV1Enabled ? "true" : "false"},PANEL_CHANNEL_CONNECTIONS_ENABLED=${channelConnectionsV1Enabled ? "true" : "false"},PANEL_CHANNEL_CONNECTIONS_DEMO=${safeJson(channelConnectionsDemo)};
+var INITIAL_TAB=${safeJson(initialTab)},INITIAL_CHANNEL=${safeJson(initialChannel)},SERVER_ROLE=${safeJson(auth.role)},SERVER_CAPABILITIES=${safeJson(capabilities)},PANEL_DATA_PATH=${safeJson(dataPath)},PANEL_HEALTH_PATH=${safeJson(healthPath)},PANEL_SETUP_PATH=${safeJson(setupPath)},PANEL_ONBOARDING_PATH="/admin/client-onboarding/data",PANEL_RETARGETING_PATH=${safeJson(retargetingPath)},PANEL_APPOINTMENTS_PATH=${safeJson(appointmentsPath)},PANEL_LOGIN_PATH=${safeJson(loginPath)},DEMO_MODE=${safeJson(demoMode)},PANEL_CONTEXT=${safeJson(panelContext)},PANEL_CHECK_ICON=${safeJson(PANEL_ICONS.check)},PANEL_TEST_GREETING=${safeJson("¡Hola! Soy " + supportBotName + ". ¿En qué te puedo ayudar hoy?")},PANEL_PAYMENTS_ENABLED=${options.paymentsV1Enabled ? "true" : "false"},PANEL_CHANNEL_CONNECTIONS_ENABLED=${channelConnectionsV1Enabled ? "true" : "false"},PANEL_CHANNEL_CONNECTIONS_DEMO=${safeJson(channelConnectionsDemo)};
 var PLAN_DATA=${safeJson(planData)};
 var state={tab:INITIAL_TAB,channel:INITIAL_CHANNEL,filter:"all",bot:PANEL_CONTEXT.appointments&&!PANEL_CONTEXT.support?"appointments":"support",data:null,health:null,billing:null,billingLoading:false,channelConnections:null,channelConnectionsLoading:false,allConversations:[],conversations:[],selected:null,metaDirty:false,draftTags:[],loading:false,guidedDraft:"",guidedFor:null,setup:null,setupDirty:false,setupLoading:false,setupStep:0,setupActivated:false,onboarding:null,onboardingLoading:false,setupDetailsOpen:false,retargeting:null,retargetingLoading:false,appointments:null,appointmentsLoading:false,appointmentMode:"week",appointmentSection:"agenda",appointmentFilter:"all",selectedAppointment:null,reprogramDay:0};
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
@@ -1544,8 +1605,8 @@ function showTab(name){
   if(retargeting)retargeting.classList.toggle("active",name==="retargeting");
   if(tests)tests.classList.toggle("active",name==="tests");
   if(toolbar)toolbar.style.display=(name==="plan"||name==="appointments"||name==="channels"||name==="setup"||name==="retargeting")?"none":"flex";
-  var pageTitle=name==="summary"?"Resumen":name==="tests"?"Pruebas":name==="plan"?"Mi plan":name==="channels"?"Finaliza el entrenamiento":name==="setup"?"Configuración de tu Nextfor IA":name==="retargeting"?"Seguimientos comerciales":name==="appointments"?"Citas":"Conversaciones";
-  var pageSubtitle=name==="summary"?("Resultados de "+(PANEL_CONTEXT.v2?PANEL_CONTEXT.assignedBotName:"tu bot de atención")+" · Últimos 7 días"):name==="tests"?"Herramientas seguras para validar el bot.":name==="plan"?"Plan, módulos y consumo":name==="channels"?"Dile a tu Nextfor dónde debe atender":name==="setup"?"Tu negocio, tu voz y tus reglas en un solo lugar":name==="retargeting"?"Cola segura, aprobaciones, cancelaciones y auditoría":name==="appointments"?"Tu agenda llenándose, sin perseguir confirmaciones.":"La IA atiende y te deja solo lo que necesita de ti.";
+  var pageTitle=name==="summary"?"Resumen":name==="tests"?"Prueba tu bot":name==="plan"?"Mi plan":name==="channels"?"Finaliza el entrenamiento":name==="setup"?"Configuración de tu Nextfor IA":name==="retargeting"?"Seguimientos comerciales":name==="appointments"?"Citas":"Conversaciones";
+  var pageSubtitle=name==="summary"?("Resultados de "+(PANEL_CONTEXT.v2?PANEL_CONTEXT.assignedBotName:"tu bot de atención")+" · Últimos 7 días"):name==="tests"?"Conversa como lo hará un cliente por WhatsApp.":name==="plan"?"Plan, módulos y consumo":name==="channels"?"Dile a tu Nextfor dónde debe atender":name==="setup"?"Tu negocio, tu voz y tus reglas en un solo lugar":name==="retargeting"?"Cola segura, aprobaciones, cancelaciones y auditoría":name==="appointments"?"Tu agenda llenándose, sin perseguir confirmaciones.":"La IA atiende y te deja solo lo que necesita de ti.";
   text("pageTitle",pageTitle);
   text("pageSubtitle",pageSubtitle);
   if(window.innerWidth<=760&&name!=="appointments"){var activeMobileModule=document.getElementById("mobileModule-"+name);if(activeMobileModule)activeMobileModule.scrollIntoView({behavior:"smooth",block:"nearest",inline:"center"});}
@@ -1679,9 +1740,17 @@ function confirmAndSend(){var item=findConversation(state.selected),input=docume
 function renderProductResults(result){var box=document.getElementById("searchTestResult");if(!box)return;var products=result.products||[];box.innerHTML=products.length?products.map(function(p){return '<div class="resultItem"><a href="'+attr(p.product_url)+'" target="_blank" rel="noreferrer">'+esc(p.title)+'</a><span>'+esc(p.price||"")+'</span></div>';}).join(""):'La búsqueda no devolvió productos.';}
 function runProductTest(event){event.preventDefault();var q=document.getElementById("testQuery").value.trim();if(!q)return;setBusy("searchTestBtn",true,"Buscando...","Probar búsqueda");text("searchTestResult","Consultando catálogo...");api("/admin/panel/test-search?q="+encodeURIComponent(q)).then(renderProductResults).catch(function(error){text("searchTestResult","No se pudo completar: "+error.message);}).finally(function(){setBusy("searchTestBtn",false,"Buscando...","Probar búsqueda");});}
 function runOrderTest(event){event.preventDefault();var payload={order_number:document.getElementById("orderNumber").value.trim(),customer_name:document.getElementById("customerName").value.trim(),phone_or_email:document.getElementById("phoneOrEmail").value.trim()};setBusy("orderTestBtn",true,"Consultando...","Consultar estado");text("orderTestResult","Validando pedido...");api("/admin/panel/order-status-test",{method:"POST",body:JSON.stringify(payload)}).then(function(result){text("orderTestResult",result.message||"Consulta completada.");}).catch(function(error){text("orderTestResult",(error.body&&error.body.message)||("No se pudo completar: "+error.message));}).finally(function(){setBusy("orderTestBtn",false,"Consultando...","Consultar estado");});}
-var multimodalTestKind="audio";
-function setMultimodalKind(kind){multimodalTestKind=kind==="image"?"image":"audio";var file=document.getElementById("multimodalFile"),audio=document.getElementById("multimodalAudioBtn"),image=document.getElementById("multimodalImageBtn");if(file){file.value="";file.accept=multimodalTestKind==="image"?"image/*":"audio/*";}if(audio)audio.classList.toggle("active",multimodalTestKind==="audio");if(image)image.classList.toggle("active",multimodalTestKind==="image");text("multimodalFileLabel",multimodalTestKind==="image"?"Selecciona una imagen":"Selecciona una nota de voz");text("multimodalSourceLabel",multimodalTestKind==="image"?"Análisis visual":"Transcripción");}
-function runMultimodalTest(event){event.preventDefault();var fileInput=document.getElementById("multimodalFile"),file=fileInput&&fileInput.files&&fileInput.files[0],button=document.getElementById("multimodalTestBtn"),stateEl=document.getElementById("multimodalTestState");if(!file)return;button.disabled=true;button.textContent="Procesando...";stateEl.textContent="Analizando";stateEl.classList.remove("ready");text("multimodalSource","Procesando archivo...");text("multimodalReply","Preparando respuesta...");fetch("/admin/panel/multimodal-test?kind="+encodeURIComponent(multimodalTestKind),{method:"POST",headers:{"content-type":file.type||"application/octet-stream"},body:file}).then(function(response){return response.json().then(function(body){if(!response.ok){var error=new Error(body.message||body.error||"No se pudo ejecutar la prueba");error.body=body;throw error;}return body;});}).then(function(result){text("multimodalSource",result.source_text||"Sin contenido detectado.");text("multimodalReply",result.bot_reply||"Sin respuesta.");stateEl.textContent="Prueba completada";stateEl.classList.add("ready");}).catch(function(error){text("multimodalSource","No se pudo procesar el archivo.");text("multimodalReply",error.message);stateEl.textContent="Requiere revisión";}).finally(function(){button.disabled=false;button.textContent="Analizar y responder";});}
+var testConversation=[],testConversationBusy=false;
+function testChatTime(){return new Date().toLocaleTimeString("es-CO",{hour:"2-digit",minute:"2-digit"});}
+function testHistory(){return testConversation.filter(function(message){return !message.error&&(message.role==="user"||message.role==="assistant")&&(message.context_text||message.text);}).slice(-8).map(function(message){return {role:message.role,text:String(message.context_text||message.text||"").slice(0,600)};});}
+function renderTestConversation(){var root=document.getElementById("testChatMessages");if(!root)return;var rows=['<div class="testChatDay">Hoy</div>'];testConversation.forEach(function(message){var content="";if(message.kind==="image"&&message.preview_url){content='<img class="testChatImage" src="'+attr(message.preview_url)+'" alt="Imagen enviada">';}else if(message.kind==="audio"&&message.preview_url){content='<audio class="testChatAudio" controls preload="metadata" src="'+attr(message.preview_url)+'"></audio>';}else{content=esc(message.text||"");}rows.push('<div class="testChatRow '+attr(message.role)+(message.error?' error':'')+'"><div class="testChatBubble">'+content+'<small class="testChatTime">'+esc(message.time||"")+'</small></div></div>');});if(testConversationBusy)rows.push('<div class="testChatTyping" aria-label="El bot está escribiendo"><i></i><i></i><i></i></div>');root.innerHTML=rows.join("");root.scrollTop=root.scrollHeight;}
+function setTestConversationBusy(busy){testConversationBusy=!!busy;document.querySelectorAll("#testChatForm button,#testChatForm textarea").forEach(function(control){control.disabled=testConversationBusy;});renderTestConversation();}
+function appendTestMessage(message){testConversation.push(Object.assign({time:testChatTime()},message));renderTestConversation();}
+function resetTestConversation(){testConversation.forEach(function(message){if(message.preview_url)URL.revokeObjectURL(message.preview_url);});testConversation=[{role:"assistant",kind:"text",text:PANEL_TEST_GREETING,context_text:PANEL_TEST_GREETING,time:testChatTime()}];testConversationBusy=false;var input=document.getElementById("testChatInput");if(input){input.value="";input.style.height="";}["testImageFile","testAudioFile"].forEach(function(id){var file=document.getElementById(id);if(file)file.value="";});setTestConversationBusy(false);}
+function resizeTestChatInput(input){if(!input)return;input.style.height="auto";input.style.height=Math.min(input.scrollHeight,110)+"px";}
+function chooseTestMedia(kind){if(testConversationBusy)return;var input=document.getElementById(kind==="image"?"testImageFile":"testAudioFile");if(input)input.click();}
+function sendTestText(event){event.preventDefault();if(testConversationBusy)return;var input=document.getElementById("testChatInput"),message=input?input.value.trim():"";if(!message)return;var history=testHistory();appendTestMessage({role:"user",kind:"text",text:message,context_text:message});input.value="";resizeTestChatInput(input);setTestConversationBusy(true);api("/admin/panel/conversation-test",{method:"POST",body:JSON.stringify({message:message,history:history})}).then(function(result){appendTestMessage({role:"assistant",kind:"text",text:result.bot_reply||"No recibí una respuesta.",context_text:result.bot_reply||""});}).catch(function(error){appendTestMessage({role:"assistant",kind:"text",text:error.message||"No pude responder esta vez.",error:true});}).finally(function(){setTestConversationBusy(false);if(input)input.focus();});}
+function sendTestMedia(kind,input){if(testConversationBusy)return;var file=input&&input.files&&input.files[0];if(!file)return;var history=testHistory(),preview=URL.createObjectURL(file),userMessage={role:"user",kind:kind,preview_url:preview,text:kind==="audio"?"Nota de voz":"Imagen",context_text:kind==="audio"?"El cliente envió una nota de voz.":"El cliente envió una imagen."};appendTestMessage(userMessage);setTestConversationBusy(true);fetch("/admin/panel/multimodal-test?kind="+encodeURIComponent(kind),{method:"POST",headers:{"content-type":file.type||"application/octet-stream","x-test-context":encodeURIComponent(JSON.stringify(history))},body:file}).then(function(response){return response.json().then(function(body){if(!response.ok){var error=new Error(body.message||body.error||"No se pudo procesar el archivo");error.body=body;throw error;}return body;});}).then(function(result){userMessage.context_text=kind==="audio"?(result.source_text||userMessage.context_text):("El cliente envió una imagen. "+(result.source_text||""));appendTestMessage({role:"assistant",kind:"text",text:result.bot_reply||"No recibí una respuesta.",context_text:result.bot_reply||""});}).catch(function(error){appendTestMessage({role:"assistant",kind:"text",text:error.message||"No pude procesar el archivo.",error:true});}).finally(function(){if(input)input.value="";setTestConversationBusy(false);});}
 var RTG_STATUS_LABELS={simulation_pending:"Lista para simular",pending_approval:"Requiere aprobación",approved:"Aprobada · envío bloqueado",simulated:"Simulada",cancelled:"Cancelada",blocked:"Bloqueada",sent:"Enviada"};
 var RTG_EVENT_LABELS={high_intent:"Alta intención",abandoned_cart:"Carrito pendiente",post_purchase:"Postcompra",back_in_stock:"Volvió a inventario",recommendation:"Recomendación"};
 var RTG_REASON_LABELS={tenant_paused:"Tenant pausado",verified_consent_required:"Falta consentimiento verificable",consent_proof_missing:"Falta evidencia del consentimiento",consent_revoked:"Consentimiento revocado",consent_expired:"Consentimiento vencido",consent_category_mismatch:"Consentimiento no cubre esta categoría",approved_template_missing:"Falta plantilla aprobada",template_not_approved_or_active:"Plantilla no aprobada o inactiva",template_quality_blocked:"Calidad de plantilla bloqueada",marketing_frequency_limit_7d:"Alcanzó el máximo de 2 mensajes en 7 días",customer_replied:"El cliente respondió",purchase_confirmed:"Compra confirmada",handoff:"Conversación en manos del equipo",stop:"El cliente pidió no recibir más mensajes",real_sends_disabled:"Envío real bloqueado",simulation_only_no_message_sent:"Simulación completada; no se envió ningún mensaje",automatic_mode_not_enabled:"Modo automático bloqueado",channel_not_supported_for_commercial_scheduler:"Canal aún no habilitado para seguimiento comercial",channel_tenant_mismatch:"El canal no pertenece a este tenant"};
@@ -1729,7 +1798,7 @@ function saveBotSetup(){if(!state.setup||!state.setup.can_edit)return;var answer
 function publishBotSetup(){if(!state.setup||!state.setup.can_edit)return;var answers=collectSetupAnswers(),feedback="";setSetupBusy(true,"publish");text("setupMessage","Validando y personalizando tu bot…");api("/admin/bot-setup/publish",{method:"POST",body:JSON.stringify({answers:answers})}).then(function(result){state.setup.current=result.setup;state.setup.published={status:"published",completion:result.setup.completion,updated_at:result.setup.updated_at,published_at:result.setup.published_at};state.setupDirty=false;state.setupActivated=true;fillSetupForm();feedback="✓ Configuración activa. Se aplicará a los mensajes nuevos.";}).catch(function(error){var detail=error.body&&error.body.completion!=null?" Vas en "+error.body.completion+"%.":"";feedback=(error.body&&error.body.message||"No se pudo activar la configuración.")+detail;}).finally(function(){setSetupBusy(false,"publish");text("setupMessage",feedback||"Revisa la configuración e intenta nuevamente.");});}
 function logoutCustomerPanel(){fetch("/admin/logout",{method:"POST"}).finally(function(){location.href="/admin/panel";});}
 ${customerAppointments.clientScript}
-var reply=document.getElementById("replyText");if(reply)reply.addEventListener("keydown",function(event){if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();sendReply();}});document.addEventListener("click",function(event){if(!event.target.closest(".emojiControl"))closeEmojiPickers();});document.addEventListener("keydown",function(event){if(event.key==="Escape")closeEmojiPickers();});var searchForm=document.getElementById("searchTestForm");if(searchForm)searchForm.addEventListener("submit",runProductTest);var orderForm=document.getElementById("orderTestForm");if(orderForm)orderForm.addEventListener("submit",runOrderTest);var multimodalForm=document.getElementById("multimodalTestForm");if(multimodalForm)multimodalForm.addEventListener("submit",runMultimodalTest);
+var reply=document.getElementById("replyText");if(reply)reply.addEventListener("keydown",function(event){if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();sendReply();}});document.addEventListener("click",function(event){if(!event.target.closest(".emojiControl"))closeEmojiPickers();});document.addEventListener("keydown",function(event){if(event.key==="Escape")closeEmojiPickers();});var searchForm=document.getElementById("searchTestForm");if(searchForm)searchForm.addEventListener("submit",runProductTest);var orderForm=document.getElementById("orderTestForm");if(orderForm)orderForm.addEventListener("submit",runOrderTest);var testChatForm=document.getElementById("testChatForm"),testChatInput=document.getElementById("testChatInput");if(testChatForm)testChatForm.addEventListener("submit",sendTestText);if(testChatInput){testChatInput.addEventListener("input",function(){resizeTestChatInput(this);});testChatInput.addEventListener("keydown",function(event){if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();if(testChatForm)testChatForm.requestSubmit();}});}resetTestConversation();
 try{var initialView=new URL(location.href).searchParams.get("view");if(["agenda","chats","reminders"].includes(initialView))state.appointmentSection=initialView;}catch(e){}
 renderChannelStrips();showTab(INITIAL_TAB);loadBotSetup();loadClientOnboardingSummary();loadPanelData(false);loadPanelHealth();if(INITIAL_TAB==="plan")loadBilling(false);setInterval(function(){if(!DEMO_MODE&&!state.metaDirty)loadPanelData(false);},30000);setInterval(loadPanelHealth,120000);
 </script>

@@ -217,7 +217,7 @@ app.use(express.json({
 app.use("/admin/assets", express.static(path.join(__dirname, "admin-assets"), { maxAge: "1d" }));
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────────
-const BOT_VERSION = "v161-staging-multimodal-test-panel";  // bump cada release; usado por endpoints /admin/*
+const BOT_VERSION = "v162-staging-conversation-simulator";  // bump cada release; usado por endpoints /admin/*
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "";
 const DASHBOARD_KEY = process.env.DASHBOARD_KEY || "";
 const DASHBOARD_SESSION_COOKIE = "rav_dashboard_session";
@@ -2789,7 +2789,34 @@ async function analyzeMultimodalImage(downloaded, media) {
   return { text, provider: "openai", model: OPENAI_VISION_MODEL };
 }
 
-async function generateMultimodalPanelPreview(conversationInput) {
+function sanitizePanelTestHistory(history) {
+  if (!Array.isArray(history)) return [];
+  return history.slice(-8).map(function (message) {
+    const role = message && message.role === "assistant" ? "assistant" : "user";
+    const text = String(message && message.text || "").replace(/\s+/g, " ").trim().slice(0, 600);
+    return text ? { role, text } : null;
+  }).filter(Boolean);
+}
+
+function panelTestHistoryFromHeader(req) {
+  const encoded = String(req.get("x-test-context") || "");
+  if (!encoded || encoded.length > 12000) return [];
+  try { return sanitizePanelTestHistory(JSON.parse(decodeURIComponent(encoded))); }
+  catch (_) { return []; }
+}
+
+function buildPanelTestConversationInput(history, currentInput) {
+  const transcript = sanitizePanelTestHistory(history).map(function (message) {
+    return (message.role === "assistant" ? "BOT" : "CLIENTE") + ": " + message.text;
+  });
+  return [
+    transcript.length ? "HISTORIAL RECIENTE DE LA CONVERSACION:\n" + transcript.join("\n") : "",
+    "NUEVO MENSAJE DEL CLIENTE:\n" + String(currentInput || "").trim(),
+    "Responde unicamente con el siguiente mensaje natural del bot, teniendo en cuenta el historial."
+  ].filter(Boolean).join("\n\n");
+}
+
+async function generatePanelTestReply(conversationInput) {
   const setup = await loadBotSetup(false);
   const publishedSetupPrompt = setup && setup.published && setup.published.derived
     ? setup.published.derived.system_prompt
@@ -9117,6 +9144,30 @@ app.post("/admin/panel/order-status-test", async (req, res) => {
   });
 });
 
+app.post("/admin/panel/conversation-test", async (req, res) => {
+  if (!adminAuthOk(req, "admin")) {
+    res.status(401).json({ ok: false, error: "unauthorized" });
+    return;
+  }
+  if (!OPENAI_API_KEY) {
+    res.status(503).json({ ok: false, error: "test_provider_not_configured", message: "El simulador todavía no está disponible." });
+    return;
+  }
+  const message = String(req.body && req.body.message || "").trim();
+  if (!message || message.length > 1200) {
+    res.status(400).json({ ok: false, error: "invalid_test_message", message: "Escribe un mensaje de hasta 1.200 caracteres." });
+    return;
+  }
+  try {
+    const history = sanitizePanelTestHistory(req.body && req.body.history);
+    const botReply = await generatePanelTestReply(buildPanelTestConversationInput(history, message));
+    res.json({ ok: true, kind: "text", bot_reply: botReply, public_activation: false, bot_version: BOT_VERSION });
+  } catch (error) {
+    log("warn", "conversation_panel_test_failed", { error: String(error && error.message || "unknown").slice(0, 160) });
+    res.status(502).json({ ok: false, error: "conversation_test_failed", message: "No pudimos responder esta vez. Intenta nuevamente." });
+  }
+});
+
 app.post("/admin/panel/multimodal-test", express.raw({
   type: function () { return true; },
   limit: "16mb"
@@ -9156,10 +9207,11 @@ app.post("/admin/panel/multimodal-test", express.raw({
       ? await transcribeMultimodalAudio(downloaded, media)
       : await analyzeMultimodalImage(downloaded, media);
     const sourceText = String(providerResult && providerResult.text || "").trim();
-    const conversationInput = kind === "audio"
+    const currentInput = kind === "audio"
       ? buildVoiceConversationInput(sourceText, providerResult)
       : buildImageConversationInput(sourceText, "");
-    const botReply = await generateMultimodalPanelPreview(conversationInput);
+    const conversationInput = buildPanelTestConversationInput(panelTestHistoryFromHeader(req), currentInput);
+    const botReply = await generatePanelTestReply(conversationInput);
     res.json({
       ok: true,
       kind,
