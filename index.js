@@ -2691,7 +2691,11 @@ function mediaFilename(media) {
   const mime = String(media && media.mime_type || "").toLowerCase();
   if (media && media.kind === "image") return "whatsapp-image." + (mime.includes("png") ? "png" : "jpg");
   if (mime.includes("mpeg") || mime.includes("mp3")) return "whatsapp-audio.mp3";
+  if (mime.includes("m4a")) return "whatsapp-audio.m4a";
   if (mime.includes("mp4")) return "whatsapp-audio.mp4";
+  if (mime.includes("wav")) return "whatsapp-audio.wav";
+  if (mime.includes("webm")) return "whatsapp-audio.webm";
+  if (mime.includes("aac")) return "whatsapp-audio.aac";
   return "whatsapp-audio.ogg";
 }
 
@@ -9168,7 +9172,7 @@ app.post("/admin/panel/multimodal-test", express.raw({
     });
   } catch (error) {
     log("warn", "multimodal_panel_test_failed", { kind, error: String(error && error.message || "unknown").slice(0, 160) });
-    res.status(502).json({ ok: false, error: "multimodal_test_failed", message: "No pudimos completar esta prueba. Revisa la credencial de staging e inténtalo de nuevo." });
+    res.status(502).json({ ok: false, error: "multimodal_test_failed", message: "No pudimos completar esta prueba. Intenta con otro archivo o revisa la configuración de staging." });
   }
 });
 
