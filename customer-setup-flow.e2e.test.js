@@ -243,6 +243,8 @@ function bothBotAnswers(company, email) {
     assert.strictEqual(response.status, 200);
     const setupHtml = await response.text();
     assert(setupHtml.includes("Comenzar el entrenamiento"));
+    assert(setupHtml.includes('id="setupLogout"'));
+    assert(setupHtml.includes('fetch("/admin/logout",{method:"POST"})'));
     assert(setupHtml.includes("Entrena a Nextfor para trabajar por"));
     assert(setupHtml.includes("tu negocio."));
     assert(setupHtml.includes("¿Qué quieres que NextforIA impulse primero?"));
