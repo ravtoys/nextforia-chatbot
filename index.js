@@ -76,6 +76,11 @@ const {
   normalizeCustomerSetupQuestionnaire
 } = require("./client-onboarding");
 const {
+  assertClientOnboardingRecordScope,
+  clientOnboardingRecordId,
+  inspectClientOnboardingScope
+} = require("./client-onboarding-scope");
+const {
   INDUSTRY_PROFILES,
   copyDefaults: defaultBotSetupAnswers,
   createSetupRecord
@@ -572,6 +577,7 @@ const instagramRuntimeState = {
 let dashboardCustomerUserCache = { loaded_at: 0, user: null };
 let botSetupCache = { loaded_at: 0, draft: null, published: null };
 const clientOnboardingCacheByTenant = new Map();
+const clientOnboardingScopeConflictByKey = new Map();
 let customerSetupQuestionnaireCache = { loaded_at: 0, questionnaire: null };
 const retargetingMemoryEvents = new Map();
 const retargetingEventCache = new Map();
@@ -4187,8 +4193,26 @@ async function persistBotSetup(answers, status, auth) {
   return record;
 }
 
-function clientOnboardingRecordId(tenantId) {
-  return "client-onboarding:" + (cleanTenantId(tenantId) || DEFAULT_TENANT_ID);
+function registerClientOnboardingScopeConflict(turn, assessment) {
+  if (!assessment || assessment.ok) return;
+  const conflict = {
+    row_id: turn && turn._id || null,
+    timestamp: turn && turn.ts || null,
+    outer_tenant_id: assessment.outer_tenant_id,
+    record_tenant_id: assessment.record_tenant_id,
+    record_user_id: assessment.record_user_id,
+    expected_user_id: assessment.expected_user_id,
+    reasons: assessment.reasons.slice()
+  };
+  const key = [conflict.row_id, conflict.timestamp, conflict.record_user_id, conflict.reasons.join(",")].join(":");
+  if (!clientOnboardingScopeConflictByKey.has(key)) {
+    clientOnboardingScopeConflictByKey.set(key, conflict);
+    log("warn", "client_onboarding_scope_conflict", conflict);
+  }
+}
+
+function listClientOnboardingScopeConflicts() {
+  return Array.from(clientOnboardingScopeConflictByKey.values()).slice(-200);
 }
 
 function parseClientOnboardingTurn(turn, tenantId) {
@@ -4196,7 +4220,12 @@ function parseClientOnboardingTurn(turn, tenantId) {
   const raw = String(turn.botReply || "").replace(/^\[ClientOnboarding\]\s*/, "");
   try {
     const parsed = JSON.parse(raw);
-    if (![1, 2].includes(parsed.version) || parsed.tenant_id !== (cleanTenantId(tenantId) || DEFAULT_TENANT_ID) || !parsed.answers) return null;
+    if (![1, 2].includes(parsed.version) || !parsed.answers) return null;
+    const assessment = inspectClientOnboardingScope(turn, parsed, cleanTenantId(tenantId) || DEFAULT_TENANT_ID);
+    if (!assessment.ok) {
+      registerClientOnboardingScopeConflict(turn, assessment);
+      return null;
+    }
     if (parsed.version === 1) {
       parsed.setup_completed = false;
       parsed.setup_completed_at = null;
@@ -4229,6 +4258,7 @@ function isMissingConversationLogsError(error) {
 async function appendClientOnboardingAuditFallback(record, tenantId, actor) {
   if (!SUPABASE_ENABLED || !record) return null;
   const cleanTenant = cleanTenantId(tenantId) || DEFAULT_TENANT_ID;
+  assertClientOnboardingRecordScope(record, cleanTenant);
   const payload = {
     tenant_id: cleanTenant,
     invitation_id: null,
@@ -4307,9 +4337,15 @@ async function listRecentClientOnboardingRecords(limit) {
   const records = [];
   function collect(turn) {
     const fallbackRecord = parseAnyClientOnboardingTurn(turn);
-    const tenantId = cleanTenantId(turn && turn.tenantId) || cleanTenantId(fallbackRecord && fallbackRecord.tenant_id);
+    if (!fallbackRecord) return;
+    const assessment = inspectClientOnboardingScope(turn, fallbackRecord, fallbackRecord.tenant_id);
+    if (!assessment.ok) {
+      registerClientOnboardingScopeConflict(turn, assessment);
+      return;
+    }
+    const tenantId = assessment.tenant_id;
     if (!tenantId || seen.has(tenantId)) return;
-    const record = parseClientOnboardingTurn(turn, tenantId) || fallbackRecord;
+    const record = parseClientOnboardingTurn(turn, tenantId);
     if (!record || !record.answers) return;
     seen.add(tenantId);
     records.push(record);
@@ -4334,6 +4370,7 @@ async function persistClientOnboarding(answers, status, auth, tenantId) {
     previous,
     questionnaire
   });
+  assertClientOnboardingRecordScope(record, tenantId);
   const rec = {
     ts: record.updated_at,
     userId: clientOnboardingRecordId(tenantId),
@@ -4364,6 +4401,7 @@ async function persistClientOnboarding(answers, status, auth, tenantId) {
 
 async function appendClientOnboardingRecord(record, tenantId) {
   tenantId = cleanTenantId(tenantId) || DEFAULT_TENANT_ID;
+  assertClientOnboardingRecordScope(record, tenantId);
   const rec = {
     ts: record.updated_at || new Date().toISOString(),
     userId: clientOnboardingRecordId(tenantId),
@@ -6704,7 +6742,12 @@ app.get("/admin/customer-setups", async (req, res) => {
     setups.sort(function (a, b) {
       return String(b.updated_at || "").localeCompare(String(a.updated_at || ""));
     });
-    res.json({ ok: true, statuses: SETUP_REVIEW_STATUSES, setups });
+    res.json({
+      ok: true,
+      statuses: SETUP_REVIEW_STATUSES,
+      setups,
+      scope_conflicts: listClientOnboardingScopeConflicts()
+    });
   } catch (error) {
     console.error("customer setups list error:", error.message);
     res.status(503).json({ ok: false, error: "setup_review_unavailable" });
