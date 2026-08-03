@@ -269,6 +269,11 @@ class SupabaseCatalogStore {
 
   async listTenants() {
     const rows = await this.rpc("platform_list_tenants_v1", {});
+    if (rows.length && rows.every(function (row) {
+      return row && typeof row === "object" && !Array.isArray(row) && row.id;
+    })) {
+      return rows;
+    }
     const payload = rows[0];
     return Array.isArray(payload) ? payload : [];
   }
