@@ -4846,14 +4846,13 @@ function adminAuthOk(req, minRole = "viewer") {
 }
 
 function customerTenantForAuth(auth) {
-  if (!auth || !auth.ok) return "";
-  if (auth.version === 2) return cleanTenantId(auth.tenant_id);
-  return DEFAULT_TENANT_ID;
+  if (!auth || !auth.ok || auth.version !== 2 || auth.session_version !== 2) return "";
+  return cleanTenantId(auth.tenant_id);
 }
 
 function customerPanelAuthOk(req, minRole = "viewer") {
   const auth = dashboardAuth(req);
-  if (auth.version !== 2) return adminAuthOk(req, minRole);
+  if (auth.version !== 2 || auth.session_version !== 2) return false;
   const required = DASHBOARD_ROLES[cleanDashboardRole(minRole)] || DASHBOARD_ROLES.viewer;
   const actual = DASHBOARD_ROLES[auth.role] || 0;
   const tenantId = customerTenantForAuth(auth);

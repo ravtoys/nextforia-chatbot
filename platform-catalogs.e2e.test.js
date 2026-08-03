@@ -78,9 +78,7 @@ function asJson(base, cookie) {
       DASHBOARD_KEY: "catalogs-e2e-key",
       DASHBOARD_SESSION_SECRET: "catalogs-e2e-session-secret-value",
       DASHBOARD_USERS: JSON.stringify([
-        { username: "platform@nextforia.example", email: "platform@nextforia.example", password: "platform-test-password", role: "super_admin", name: "Platform" },
-        { username: "admin@legacy.example", email: "admin@legacy.example", password: "admin-test-password", role: "admin", tenant_id: "rav-toys", name: "Admin legado" },
-        { username: "viewer@legacy.example", email: "viewer@legacy.example", password: "viewer-test-password", role: "viewer", tenant_id: "rav-toys", name: "Viewer legado" }
+        { username: "platform@nextforia.example", email: "platform@nextforia.example", password: "platform-test-password", role: "super_admin", name: "Platform" }
       ]),
       VERIFY_TOKEN: "catalogs-e2e-verify",
       WA_TOKEN: "catalogs-e2e-wa-dummy",
@@ -89,6 +87,10 @@ function asJson(base, cookie) {
       SUPABASE_KEY: "",
       CUSTOMER_ACCESS_V2_ENABLED: "1",
       CUSTOMER_ACCESS_TEST_MODE: "1",
+      CUSTOMER_ACCESS_TEST_USERS: JSON.stringify([
+        { user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", tenant_id: "tenant-catalog", company_name: "Empresa Catálogo", email: "admin@legacy.example", password: "admin-test-password", role: "admin" },
+        { user_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", tenant_id: "tenant-catalog", company_name: "Empresa Catálogo", email: "viewer@legacy.example", password: "viewer-test-password", role: "viewer" }
+      ]),
       CUSTOMER_PANEL_BASE_URL: "https://customer-panel.staging.example"
     }),
     stdio: ["ignore", "pipe", "pipe"]

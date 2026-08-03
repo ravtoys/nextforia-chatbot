@@ -260,6 +260,13 @@ function signedSessionCookie(secret, user) {
     assert.strictEqual(userB.body.user.tenant_id, "tenant-b");
     assert.match(userA.cookie, /^rav_dashboard_session=/);
 
+    const master = await login(base, { key: "customer-panel-v2-key" });
+    response = await fetch(base + "/admin/panel?tab=summary", { headers: { cookie: master.cookie } });
+    assert.strictEqual(response.status, 403, "Super Admin must not inherit the configured default tenant");
+    assert(!(await response.text()).includes("RAV Toys"));
+    response = await fetch(base + "/admin/panel/data", { headers: { cookie: master.cookie } });
+    assert.strictEqual(response.status, 401, "customer data requires a verified tenant membership");
+
     response = await fetch(base + "/admin/panel?tab=appointments", { headers: { cookie: userA.cookie } });
     assert.strictEqual(response.status, 200);
     const shellA = await response.text();

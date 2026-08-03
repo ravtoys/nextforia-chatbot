@@ -19,12 +19,11 @@ function render(options) {
 }
 
 const legacy = render();
-assert(legacy.includes("<title>Panel de control · RAV Toys</title>"));
-assert(legacy.includes('<h1 id="brandName">RAV Toys</h1>'));
-assert(legacy.includes('id="bot-support"'));
-assert(legacy.includes('id="bot-appointments"'));
-assert(legacy.includes("2 bots activos"));
-assert(legacy.includes("Atención al cliente · Plan Growth"));
+assert(legacy.includes("<title>Panel de control · Tu empresa</title>"));
+assert(legacy.includes('<h1 id="brandName">Tu empresa</h1>'));
+assert(!legacy.includes('id="bot-support"'));
+assert(!legacy.includes('id="bot-appointments"'));
+assert(!legacy.includes(">RAV Toys<"));
 
 const tenantA = render({
   tenantContext: { id: "tenant-a", company_name: "Empresa A", plan_id: "growth", assigned_bot_id: "atencion-cliente", status: "live" }

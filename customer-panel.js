@@ -20,17 +20,17 @@ function customerPanelContext(options) {
   if (!tenant) {
     return {
       v2: false,
-      businessName: "RAV Toys",
-      initials: "RAV",
-      avatarInitials: "RA",
-      planId: "growth",
-      planName: "Growth",
-      assignedBotId: "duo",
-      assignedBotName: "Atención al cliente + Agendamiento",
+      businessName: "Tu empresa",
+      initials: "NX",
+      avatarInitials: "NX",
+      planId: "",
+      planName: "Asignado",
+      assignedBotId: "",
+      assignedBotName: "Bot asignado",
       customerSetupCompleted: false,
-      support: true,
-      appointments: true,
-      referralCode: "RAVTOYS"
+      support: false,
+      appointments: false,
+      referralCode: "NEXTFORIA"
     };
   }
   const businessName = String(tenant.company_name || tenant.name || tenant.id || "Tu empresa").trim();
@@ -124,13 +124,13 @@ module.exports = function renderCustomerPanel(res, options) {
     return '<button type="button" data-emoji="' + emoji + '" onclick="insertEmoji(this.dataset.emoji)" aria-label="Insertar ' + emoji + '">' + emoji + '</button>';
   }).join("");
   const supportBotName = panelContext.v2 ? panelContext.assignedBotName : "Atención al cliente";
-  const testBotName = panelContext.v2 ? panelContext.businessName + " Bot" : "RAV-Bot";
+  const testBotName = panelContext.v2 ? panelContext.businessName + " Bot" : "Tu bot";
   const appointmentBotName = panelContext.v2 ? panelContext.assignedBotName : "Agendamiento";
   const supportBotButton = !paymentGateRequired && panelContext.support ? '<button class="botCard active" id="bot-support" type="button" onclick="selectBot(\'support\')"><span class="botIcon">' + PANEL_ICONS.bot + '</span><span class="botMeta"><strong>' + escapeHtml(supportBotName) + '</strong><span>Chatbot 24/7</span></span><span class="botDot"></span></button>' : "";
   const appointmentBotButton = !paymentGateRequired && panelContext.appointments ? '<button class="botCard" id="bot-appointments" type="button" onclick="selectBot(\'appointments\')"><span class="botIcon">' + PANEL_ICONS.calendar + '</span><span class="botMeta"><strong>' + escapeHtml(appointmentBotName) + '</strong><span>Citas y recordatorios</span></span><span class="botDot"></span></button>' : "";
   const mobileSupportBotButton = !paymentGateRequired && panelContext.support ? '<button class="active" id="mobile-bot-support" type="button" onclick="selectBot(\'support\')"><span class="botDot"></span><span>' + escapeHtml(supportBotName) + '</span></button>' : "";
   const mobileAppointmentBotButton = !paymentGateRequired && panelContext.appointments ? '<button' + (panelContext.v2 ? ' class="active"' : "") + ' id="mobile-bot-appointments" type="button" onclick="selectBot(\'appointments\')"><span class="botDot"></span><span>' + escapeHtml(appointmentBotName) + '</span></button>' : "";
-  const activeBotCount = panelContext.v2 ? 1 : 2;
+  const activeBotCount = (panelContext.support ? 1 : 0) + (panelContext.appointments ? 1 : 0);
   const assignedModuleDescription = panelContext.appointments
     ? "Gestiona citas, confirmaciones y recordatorios desde un único módulo."
     : "Centraliza resultados y conversaciones de los canales conectados en una sola bandeja.";
@@ -155,7 +155,7 @@ module.exports = function renderCustomerPanel(res, options) {
     chatsIncluidos: 500,
     chatsConsumidos: 410,
     rescatesFrecuentes: true,
-    referidos: { codigo: "RAVTOYS", count: 0, mesesGanados: 0 }
+    referidos: { codigo: panelContext.referralCode, count: 0, mesesGanados: 0 }
   };
 
   res.status(200).setHeader("content-type", "text/html; charset=utf-8");
@@ -1361,7 +1361,7 @@ ${customerAppointments.styles}
               <div class="setupProgressCopy">
                 <span class="setupStatus" id="setupPublishedStatus">No activa</span>
                 <div class="setupEyebrow" id="setupEyebrow">Paso 1 de 7 · Tu negocio</div>
-                <p class="setupStory" id="setupStory">${panelContext.v2 ? "Nadie conoce tu negocio como tú. Empieza por lo esencial y tu bot aprenderá a presentarlo igual de bien." : "Nadie conoce tu negocio como tú. Empieza por lo esencial y RAV-Bot aprenderá a presentarlo igual de bien."}</p>
+                <p class="setupStory" id="setupStory">Nadie conoce tu negocio como tú. Empieza por lo esencial y tu bot aprenderá a presentarlo igual de bien.</p>
                 <div class="setupStepper" id="setupStepper" aria-label="Progreso de configuración"></div>
               </div>
               <div class="setupProgressRing" id="setupCompletion"><div><span><strong id="setupCompletionValue">14%</strong>completado</span></div></div>
@@ -1374,8 +1374,8 @@ ${customerAppointments.styles}
             <section class="setupStep active" data-setup-step="0">
               <div class="setupStepHead"><span class="setupStepNumber">1</span><div><h4>Empecemos por tu negocio</h4><p>Esto permite que el bot se presente bien y recomiende con contexto.</p></div></div>
               <div class="setupGrid">
-                <label class="setupField"><span>¿Cómo se llama tu negocio?</span><input data-setup="business.name" maxlength="120" placeholder="Ej. ${escapeHtml(panelContext.v2 ? panelContext.businessName : "RAV Toys")}"></label>
-                <label class="setupField"><span>¿Cómo quieres llamar a tu bot?</span><input data-setup="business.bot_name" maxlength="80" placeholder="Ej. ${escapeHtml(panelContext.v2 ? "Asistente " + panelContext.initials : "RAV-Bot")}"></label>
+                <label class="setupField"><span>¿Cómo se llama tu negocio?</span><input data-setup="business.name" maxlength="120" placeholder="Ej. ${escapeHtml(panelContext.businessName)}"></label>
+                <label class="setupField"><span>¿Cómo quieres llamar a tu bot?</span><input data-setup="business.bot_name" maxlength="80" placeholder="Ej. ${escapeHtml(panelContext.v2 ? "Asistente " + panelContext.initials : "Tu bot")}"></label>
                 <label class="setupField"><span>¿A qué industria pertenece?</span><select data-setup="business.industry" id="setupIndustry" onchange="renderIndustryQuestions()"></select></label>
                 <label class="setupField"><span>Sitio web o catálogo</span><input data-setup="business.website" maxlength="500" placeholder="https://..."></label>
                 <label class="setupField"><span>¿Con qué plataforma está hecha tu web?</span><select data-setup="business.web_platform"><option value="">Selecciona una opción</option><option value="shopify">Shopify</option><option value="woocommerce">WooCommerce (WordPress)</option><option value="wix">Wix</option><option value="squarespace">Squarespace</option><option value="social_shop">Tienda en Instagram/Facebook</option><option value="other">Otra</option><option value="none">Aún no tengo</option></select></label>
@@ -1803,7 +1803,7 @@ function renderOnboardingSummary(payload){var box=document.getElementById("setup
 function loadClientOnboardingSummary(){if(state.onboardingLoading)return;state.onboardingLoading=true;api(PANEL_ONBOARDING_PATH).then(function(payload){state.onboarding=payload;renderOnboardingSummary(payload);}).catch(function(error){var box=document.getElementById("setupConfigSummary");if(box)box.innerHTML='<article class="setupConfigCard"><small>Configuración</small><strong>No se pudo cargar</strong><p>'+esc(error.message||"Intenta de nuevo en unos minutos.")+'</p></article>';}).finally(function(){state.onboardingLoading=false;});}
 function toggleSetupDetails(){state.setupDetailsOpen=!state.setupDetailsOpen;var panel=document.getElementById("setupDetailsPanel"),details=document.getElementById("onboardingDetails"),button=document.getElementById("setupDetailsToggle");if(panel)panel.hidden=!state.setupDetailsOpen;if(details)details.classList.toggle("open",state.setupDetailsOpen);if(button)button.textContent=state.setupDetailsOpen?"Ocultar detalles":"Ver cuestionario completo";}
 var SETUP_STEP_TITLES=["Tu negocio","Sedes y horarios","Oferta y condiciones","Tu industria","Personalidad y canales","Autonomía del bot","Resultados"];
-var SETUP_DEFAULT_BOT_NAME=PANEL_CONTEXT.v2?"tu bot":"RAV-Bot";
+var SETUP_DEFAULT_BOT_NAME="tu bot";
 var SETUP_STEP_MESSAGES=[
   "Nadie conoce tu negocio como tú. Empieza por lo esencial y "+SETUP_DEFAULT_BOT_NAME+" aprenderá a presentarlo igual de bien.",
   "Tú sabes dónde y cuándo te buscan. Enséñaselo para que oriente a cada cliente tan bien como lo harías tú.",
