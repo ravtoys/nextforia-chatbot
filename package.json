@@ -19,9 +19,9 @@
             "verify:appointments": "node appointment-live-check.js"
       },
       "dependencies": {
-            "@elevenlabs/elevenlabs-js": "^2.58.0",
-            "axios": "1.18.1",
-            "express": "4.22.2",
-            "libphonenumber-js": "^1.13.9"
+            "@elevenlabs/elevenlabs-js": "^2.60.0",
+            "axios": "1.19.0",
+            "express": "5.2.1",
+            "libphonenumber-js": "^1.13.10"
       }
 }
