@@ -697,9 +697,12 @@ function addConfigurationSection(lines, title, entries) {
 
 function buildCustomerServiceSystemPrompt(configuration) {
   const config = configuration && typeof configuration === "object" ? configuration : {};
+  const active = config.lifecycle === "approved_for_testing";
   const lines = [
-    "CONFIGURACIÓN DE CUSTOMER SERVICE EN REVISIÓN INTERNA.",
-    "Esta configuración proviene del setup compartido aprobado por el cliente y Super Admin.",
+    active ? "CONFIGURACIÓN ACTIVA DE CUSTOMER SERVICE." : "CONFIGURACIÓN DE CUSTOMER SERVICE EN REVISIÓN INTERNA.",
+    active
+      ? "Esta es la configuración vigente de esta empresa. Úsala en esta respuesta y no la sustituyas por valores predeterminados o de otro tenant."
+      : "Esta configuración proviene del setup compartido y todavía requiere aprobación.",
     "No inventes información ausente, precios, disponibilidad, descuentos ni promesas.",
     "No gestiones citas ni uses reglas del bot de agendamiento.",
     "",
@@ -1208,11 +1211,14 @@ function onboardingCompletion(input, questionnaire) {
 function createOnboardingRecord(input, meta) {
   meta = meta || {};
   const answers = normalizeOnboarding(input);
-  const now = new Date().toISOString();
+  const now = text(meta.now, 40) || new Date().toISOString();
   const status = choice(meta.status, ["draft", "submitted", "completed", "in_review", "ready"], "draft");
   const previous = meta.previous && typeof meta.previous === "object" ? meta.previous : {};
   const previousReview = normalizeSetupReview(previous.setup_review, previous.setup_completed ? "ready" : "incomplete");
-  const reviewStatus = choice(meta.review_status, SETUP_REVIEW_STATUSES, status === "completed" ? "ready" : previousReview.status || "incomplete");
+  const reviewFallback = previousReview.status === "live"
+    ? "live"
+    : (status === "completed" ? "ready" : previousReview.status || "incomplete");
+  const reviewStatus = choice(meta.review_status, SETUP_REVIEW_STATUSES, reviewFallback);
   if (status === "completed" && (answers.setup_goal === "appointments" || answers.setup_goal === "both")) {
     const previousAppointmentStatus = previous.answers && previous.answers.appointment_setup && previous.answers.appointment_setup.setup_status;
     if (!previous.setup_completed || previousAppointmentStatus === "draft" || previousAppointmentStatus === "changes_requested") {

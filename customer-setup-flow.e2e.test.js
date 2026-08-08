@@ -541,6 +541,24 @@ function bothBotAnswers(company, email) {
     assert.strictEqual(payload.onboarding.customer_service_configuration.lifecycle, "approved_for_testing");
     assert.strictEqual(payload.launch.ready, true);
 
+    const liveAnswersUpdatedByCustomer = JSON.parse(JSON.stringify(payload.onboarding.answers));
+    liveAnswersUpdatedByCustomer.operations.bot_instructions = "INSTRUCCION-LIVE-DESDE-SETUP";
+    response = await fetch(base + "/admin/client-onboarding/data", {
+      method: "PUT",
+      headers: { "content-type": "application/json", origin: base, cookie: cookieA },
+      body: JSON.stringify({
+        status: "completed",
+        answers: liveAnswersUpdatedByCustomer,
+        plan_id: "nextfor-aura",
+        bot_id: "atencion-cliente"
+      })
+    });
+    assert.strictEqual(response.status, 200);
+    payload = await response.json();
+    assert.strictEqual(payload.onboarding.setup_review.status, "live");
+    assert.strictEqual(payload.onboarding.customer_service_configuration.lifecycle, "approved_for_testing");
+    assert.match(payload.onboarding.customer_service_configuration.system_prompt, /INSTRUCCION-LIVE-DESDE-SETUP/);
+
     response = await fetch(base + "/admin/customer-setups/tenant-setup-a/test", {
       method: "POST",
       headers: { "content-type": "application/json", origin: base, cookie: cookieA },

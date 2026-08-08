@@ -113,6 +113,7 @@ const {
   personalityForOnboarding,
   planFeatures
 } = require("./bot-personality");
+const { resolveLiveBotConfiguration } = require("./live-bot-configuration");
 const {
   RetargetingEngine,
   REAL_SENDS_ENABLED: RETARGETING_REAL_SENDS_ENABLED,
@@ -312,7 +313,7 @@ app.get("/admin/terms", (req, res) => res.type("html").send(renderTermsOfService
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────────
 const PRODUCT_NAME = "NextforIA Chatbot";
-const BOT_VERSION = "v343-whatsapp-existing-number-guard";  // bump cada release; usado por endpoints /admin/*
+const BOT_VERSION = "v344-live-customer-configuration";  // bump cada release; usado por endpoints /admin/*
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "";
 const DASHBOARD_KEY = process.env.DASHBOARD_KEY || "";
 const DASHBOARD_SESSION_COOKIE = "nextforia_dashboard_session";
@@ -362,7 +363,11 @@ const DASHBOARD_SESSION_SECRET = process.env.DASHBOARD_SESSION_SECRET || (DASHBO
 const DASHBOARD_SESSION_TTL_HOURS = boundedEnvInt("DASHBOARD_SESSION_TTL_HOURS", 8, 1, 24);
 const PUBLIC_BASE_URL = configuredHttpsOrigin(process.env.PUBLIC_BASE_URL, process.env.RENDER_EXTERNAL_URL);
 const RAW_SUPABASE_URL = String(process.env.SUPABASE_URL || "").trim();
-const normalizedSupabaseUrl = configuredHttpsOrigin(RAW_SUPABASE_URL);
+const testSupabaseUrl = process.env.NODE_ENV === "test" && process.env.ALLOW_SELF_HOSTED_SUPABASE === "1" &&
+  /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(RAW_SUPABASE_URL)
+  ? RAW_SUPABASE_URL.replace(/\/$/, "")
+  : "";
+const normalizedSupabaseUrl = configuredHttpsOrigin(RAW_SUPABASE_URL) || testSupabaseUrl;
 const SUPABASE_URL = normalizedSupabaseUrl && (
   new URL(normalizedSupabaseUrl).hostname.endsWith(".supabase.co") || process.env.ALLOW_SELF_HOSTED_SUPABASE === "1"
 ) ? normalizedSupabaseUrl : "";
@@ -928,10 +933,21 @@ if (CUSTOMER_ACCESS_TEST_MODE && process.env.CUSTOMER_ACCESS_TEST_USERS) {
       answers.operations.bot_instructions = "Responder con claridad y escalar cuando corresponda.";
       answers.team.admin_email = email;
       answers.team.human_support_contact = email;
+      const seededCustomerServiceConfiguration = fixture.bot_live === true &&
+        ["customer_service", "both"].includes(answers.setup_goal)
+        ? normalizeCustomerServiceConfiguration(generateCustomerServiceConfiguration(answers, {
+          actor: email,
+          source_setup_updated_at: new Date().toISOString()
+        }), { actor: email, lifecycle: "approved_for_testing" })
+        : null;
       const record = createOnboardingRecord(answers, {
         tenant_id: fixture.tenant_id,
         status: "completed",
-        updated_by: email
+        updated_by: email,
+        review_status: fixture.bot_live === true ? "live" : undefined,
+        review_actor: fixture.bot_live === true ? email : undefined,
+        customer_service_configuration: seededCustomerServiceConfiguration,
+        configuration_lifecycle: seededCustomerServiceConfiguration ? "approved_for_testing" : undefined
       });
       clientOnboardingCacheByTenant.set(cleanTenantId(fixture.tenant_id), { loaded_at: Date.now(), record });
     });
@@ -4421,41 +4437,41 @@ async function handleConversation(userId, userMessage, conversationMeta) {
   if (!conversations.has(stateKey) || newSession) conversations.set(stateKey, []);
   const history = conversations.get(stateKey);
   const activeBotSetup = await loadBotSetup(false);
-  const activeClientOnboarding = await loadClientOnboarding(false, tenantId);
+  // Each inbound turn re-reads the tenant record so a saved configuration applies
+  // to the very next response, including when another instance handled the save.
+  const activeClientOnboarding = await loadClientOnboarding(true, tenantId);
   const onboardingGoal = String(activeClientOnboarding && activeClientOnboarding.answers && activeClientOnboarding.answers.setup_goal || "").trim().toLowerCase();
-  const customerServiceConfiguration = activeClientOnboarding && activeClientOnboarding.customer_service_configuration;
   const appointmentConfiguration = activeClientOnboarding && activeClientOnboarding.appointment_configuration;
-  const customerServiceConfigured = !!(customerServiceConfiguration &&
-    customerServiceConfiguration.lifecycle === "approved_for_testing" &&
-    customerServiceConfiguration.system_prompt);
   const appointmentConfigured = !!(appointmentConfiguration &&
     appointmentConfiguration.lifecycle === "approved_for_testing" &&
     appointmentConfiguration.system_prompt);
   const usesAppointmentBot = appointmentConfigured && ["appointments", "both"].includes(onboardingGoal);
-  const usesCustomerServiceBot = customerServiceConfigured && ["customer_service", "both"].includes(onboardingGoal);
+  const storedPersonalityPlan = activeClientOnboarding && activeClientOnboarding.bot_personality &&
+    activeClientOnboarding.bot_personality.plan_id;
+  const activeTenantPlanId = ["customer_service", "both"].includes(onboardingGoal)
+    ? await runtimeTenantPlanId(tenantId, storedPersonalityPlan)
+    : storedPersonalityPlan;
+  const liveBotConfiguration = resolveLiveBotConfiguration(activeClientOnboarding, {
+    tenant_id: tenantId,
+    plan_id: activeTenantPlanId
+  });
+  const usesCustomerServiceBot = liveBotConfiguration.active;
+  const botPersonalityPrompt = usesCustomerServiceBot ? liveBotConfiguration.personality_prompt : "";
   const tenantConfigurationPrompts = [
-    usesCustomerServiceBot ? customerServiceConfiguration.system_prompt : "",
+    usesCustomerServiceBot && liveBotConfiguration.customer_service_configuration
+      ? liveBotConfiguration.customer_service_configuration.system_prompt
+      : "",
     usesAppointmentBot ? appointmentConfiguration.system_prompt : "",
     usesAppointmentBot ? APPOINTMENT_OPERATIONAL_PROMPT : ""
   ].filter(Boolean);
-  const storedPersonalityPlan = activeClientOnboarding && activeClientOnboarding.bot_personality &&
-    activeClientOnboarding.bot_personality.plan_id;
-  const activeTenantPlanId = usesCustomerServiceBot && activeClientOnboarding.bot_personality
-    ? await runtimeTenantPlanId(tenantId, storedPersonalityPlan)
-    : storedPersonalityPlan;
-  const botPersonalityPrompt = usesCustomerServiceBot && activeClientOnboarding.bot_personality
-    ? buildBotPersonalityPrompt(
-        personalityForOnboarding(activeClientOnboarding, activeTenantPlanId),
-        { plan_id: activeTenantPlanId }
-      )
-    : "";
   const configuredTenantBot = tenantConfigurationPrompts.length > 0;
+  const legacyRavFallbackAllowed = isRavTenantId(tenantId) && !liveBotConfiguration.contracted && !usesAppointmentBot;
   const conversationSystemPrompt = configuredTenantBot
     ? "Eres el asistente oficial de este cliente de Nextfor IA. Sigue únicamente la configuración del tenant incluida abajo. Protege datos personales, no inventes información y escala si no puedes operar con seguridad."
-    : isRavTenantId(tenantId)
+    : legacyRavFallbackAllowed
       ? SYSTEM_PROMPT
       : "Eres un asistente temporal de Nextfor IA para este negocio. No uses nombres, catálogo, políticas, productos ni datos de ningún otro cliente. La configuración comercial de este tenant todavía no está aprobada: limita tu ayuda a respuestas generales, explica que el equipo está terminando la configuración y deriva a una persona cuando la solicitud dependa de información del negocio.";
-  let conversationTools = isRavTenantId(tenantId) && !configuredTenantBot
+  let conversationTools = legacyRavFallbackAllowed && !configuredTenantBot
     ? TOOLS.slice()
     : TOOLS.filter(function (tool) { return tool.name === "request_human_handoff"; });
   if (usesAppointmentBot) {
@@ -4520,7 +4536,7 @@ async function handleConversation(userId, userMessage, conversationMeta) {
   });
   let memoryContext = buildCustomerMemoryContext(customerMemory, { newSession });
   let onboardingConversationContext = buildCoverageConversationContext(activeClientOnboarding);
-  let publishedSetupPrompt = isRavTenantId(tenantId) && !configuredTenantBot && activeBotSetup.published && activeBotSetup.published.derived
+  let publishedSetupPrompt = legacyRavFallbackAllowed && !configuredTenantBot && activeBotSetup.published && activeBotSetup.published.derived
     ? activeBotSetup.published.derived.system_prompt
     : "";
   let workingHistory = history.slice(-adaptiveBudget.historyMessages);
@@ -6568,19 +6584,32 @@ async function persistClientOnboarding(answers, status, auth, tenantId) {
     previous,
     questionnaire
   });
-  if (status === "completed" && setupReviewSummary(record).status !== "live") {
+  if (status === "completed") {
     const automationActor = "Nextfor automation";
     let customerServiceConfiguration = record.customer_service_configuration;
     let appointmentConfiguration = record.appointment_configuration;
     let generated = false;
+    const customerServiceAlreadyActive = !!(customerServiceConfiguration &&
+      customerServiceConfiguration.lifecycle === "approved_for_testing") ||
+      setupReviewSummary(record).status === "live" ||
+      record.answers && record.answers.customer_service_setup &&
+        record.answers.customer_service_setup.setup_status === "active";
     if (setupIncludesCustomerService(record.answers) &&
-        (!customerServiceConfiguration ||
+        (customerServiceAlreadyActive || !customerServiceConfiguration ||
           customerServiceConfiguration.lifecycle === "draft" &&
           customerServiceConfiguration.updated_by === automationActor)) {
       customerServiceConfiguration = generateCustomerServiceConfiguration(record.answers, {
         actor: automationActor,
-        source_setup_updated_at: record.last_updated_at || record.updated_at
+        source_setup_updated_at: record.last_updated_at || record.updated_at,
+        now: record.last_updated_at || record.updated_at
       });
+      if (customerServiceConfiguration && customerServiceAlreadyActive) {
+        customerServiceConfiguration = normalizeCustomerServiceConfiguration(customerServiceConfiguration, {
+          actor: auth && (auth.name || auth.username || auth.email) || automationActor,
+          lifecycle: "approved_for_testing",
+          now: record.last_updated_at || record.updated_at
+        });
+      }
       generated = generated || !!customerServiceConfiguration;
     }
     if (setupIncludesAppointments(record.answers) &&
@@ -6608,7 +6637,9 @@ async function persistClientOnboarding(answers, status, auth, tenantId) {
         appointment_configuration_lifecycle: appointmentConfiguration && appointmentConfiguration.lifecycle || "draft",
         review_event: {
           action: "auto_build_configuration",
-          note: "Borradores generados automáticamente al completar el setup."
+          note: customerServiceAlreadyActive
+            ? "Configuración activa regenerada desde el setup compartido."
+            : "Borradores generados automáticamente al completar el setup."
         }
       });
     }
@@ -12188,17 +12219,24 @@ app.get("/admin/panel/bot-personality", async (req, res) => {
   try {
     const auth = dashboardAuth(req);
     const tenantId = customerTenantForAuth(auth);
-    const onboarding = await loadClientOnboarding(false, tenantId);
+    const onboarding = await loadClientOnboarding(true, tenantId);
     const business = customerBusinessForAuthAndOnboarding(auth, onboarding);
     const planId = business.plan_id || "nextfor-uno";
+    const liveConfiguration = resolveLiveBotConfiguration(onboarding, {
+      tenant_id: tenantId,
+      plan_id: planId
+    });
     res.json({
       ok: true,
       tenant_id: tenantId,
       can_edit: !!customerPanelCapabilities(auth.role).configure_bot,
-      active: !!(onboarding && onboarding.bot_personality),
+      active: liveConfiguration.active,
+      applied: liveConfiguration.active,
+      configuration_version: liveConfiguration.fingerprint,
+      applied_at: liveConfiguration.applied_at,
       plan_id: planId,
       features: planFeatures(planId),
-      personality: personalityForOnboarding(onboarding, planId)
+      personality: liveConfiguration.personality
     });
   } catch (error) {
     console.error("bot personality load error:", error.message);
@@ -12226,9 +12264,29 @@ app.put("/admin/panel/bot-personality", async (req, res) => {
   try {
     const auth = dashboardAuth(req);
     const tenantId = customerTenantForAuth(auth);
-    const previous = await loadClientOnboarding(false, tenantId);
+    const previous = await loadClientOnboarding(true, tenantId);
     const business = customerBusinessForAuthAndOnboarding(auth, previous);
     const planId = business.plan_id || "nextfor-uno";
+    const previousLiveConfiguration = resolveLiveBotConfiguration(previous, {
+      tenant_id: tenantId,
+      plan_id: planId
+    });
+    if (!previousLiveConfiguration.contracted) {
+      res.status(409).json({
+        ok: false,
+        error: "customer_service_not_contracted",
+        message: "Esta empresa no tiene contratado el bot de atención al cliente."
+      });
+      return;
+    }
+    if (!previousLiveConfiguration.active) {
+      res.status(409).json({
+        ok: false,
+        error: "bot_configuration_not_live",
+        message: "Guardamos la configuración únicamente cuando podemos aplicarla al bot activo. Pide a NextforIA revisar la activación."
+      });
+      return;
+    }
     const now = new Date().toISOString();
     const personality = normalizeBotPersonality(req.body && req.body.personality || req.body, {
       fallback: personalityForOnboarding(previous, planId),
@@ -12243,15 +12301,34 @@ app.put("/admin/panel/bot-personality", async (req, res) => {
     record.last_updated_at = now;
     record.updated_at = now;
     record.updated_by = personality.updated_by;
+    const expectedLiveConfiguration = resolveLiveBotConfiguration(record, {
+      tenant_id: tenantId,
+      plan_id: planId
+    });
     await appendClientOnboardingRecord(record, tenantId);
+    const verifiedRecord = await loadClientOnboarding(true, tenantId);
+    const verifiedLiveConfiguration = resolveLiveBotConfiguration(verifiedRecord, {
+      tenant_id: tenantId,
+      plan_id: planId
+    });
+    if (!verifiedLiveConfiguration.active ||
+        verifiedLiveConfiguration.fingerprint !== expectedLiveConfiguration.fingerprint ||
+        verifiedLiveConfiguration.personality.updated_at !== now) {
+      const verificationError = new Error("bot_configuration_apply_verification_failed");
+      verificationError.status = 503;
+      throw verificationError;
+    }
     res.json({
       ok: true,
       active: true,
+      applied: true,
       can_edit: true,
-      applies_to_new_messages: true,
+      applies_to_next_response: true,
+      configuration_version: verifiedLiveConfiguration.fingerprint,
+      applied_at: verifiedLiveConfiguration.applied_at,
       plan_id: planId,
       features: planFeatures(planId),
-      personality
+      personality: verifiedLiveConfiguration.personality
     });
   } catch (error) {
     console.error("bot personality save error:", error.message);
@@ -12271,7 +12348,7 @@ app.post("/admin/panel/bot-personality/test", async (req, res) => {
   try {
     const auth = dashboardAuth(req);
     const tenantId = customerTenantForAuth(auth);
-    const onboarding = await loadClientOnboarding(false, tenantId);
+    const onboarding = await loadClientOnboarding(true, tenantId);
     const business = customerBusinessForAuthAndOnboarding(auth, onboarding);
     const planId = business.plan_id || "nextfor-uno";
     const message = cleanRuntimeText(req.body && req.body.message, 800);
@@ -12288,23 +12365,27 @@ app.post("/admin/panel/bot-personality/test", async (req, res) => {
       });
       return;
     }
-    const personality = normalizeBotPersonality(req.body && req.body.personality, {
-      fallback: personalityForOnboarding(onboarding, planId),
-      plan_id: planId,
-      updated_at: onboarding && onboarding.bot_personality && onboarding.bot_personality.updated_at || null,
-      updated_by: auth.name || auth.email || auth.username || "customer"
+    const liveConfiguration = resolveLiveBotConfiguration(onboarding, {
+      tenant_id: tenantId,
+      plan_id: planId
     });
-    const customerConfig = onboarding && onboarding.customer_service_configuration;
+    if (!liveConfiguration.active) {
+      res.status(409).json({
+        ok: false,
+        error: "bot_configuration_not_live",
+        message: "La configuración todavía no está aplicada al bot activo."
+      });
+      return;
+    }
     const system = [
       "Eres una vista previa segura del bot de atención de esta empresa. No envías mensajes reales. No inventes datos ausentes.",
-      customerConfig && customerConfig.system_prompt || "",
-      buildBotPersonalityPrompt(personality, { plan_id: planId })
+      ...liveConfiguration.prompts
     ].filter(Boolean).join("\n\n");
     const response = await axios.post(
       "https://api.anthropic.com/v1/messages",
       {
         model: "claude-sonnet-4-5-20250929",
-        max_tokens: maxTokensForPersonality(personality),
+        max_tokens: maxTokensForPersonality(liveConfiguration.personality),
         system,
         messages: [{ role: "user", content: message }]
       },
@@ -12328,7 +12409,9 @@ app.post("/admin/panel/bot-personality/test", async (req, res) => {
       ok: true,
       delivered: false,
       reply,
-      personality
+      applied: true,
+      configuration_version: liveConfiguration.fingerprint,
+      personality: liveConfiguration.personality
     });
   } catch (error) {
     console.error("bot personality test error:", error.message);

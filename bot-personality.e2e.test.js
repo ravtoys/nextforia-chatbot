@@ -69,9 +69,10 @@ async function requestJson(base, pathName, cookie, options) {
   const fixtureSalt = "BwcHBwcHBwcHBwcHBwcHBw";
   const fixtureHash = "vI4zYyHL91qWraHNLobM1UGoSLRKOz1_YcbXI30oWkRTA9nROmpb5PpP-S4bUfx9E6A5bIMHzvbVVehS_nubIw";
   const users = [
-    { user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", tenant_id: "config-a", company_name: "Config A", email: "admin@config-a.example", password: "TenantPassword2026", role: "admin", plan_id: "nextfor-aura", assigned_bot_id: "atencion-cliente", password_salt: fixtureSalt, password_hash: fixtureHash },
-    { user_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", tenant_id: "config-b", company_name: "Config B", email: "admin@config-b.example", password: "TenantPassword2026", role: "admin", plan_id: "nextfor-uno", assigned_bot_id: "atencion-cliente", password_salt: fixtureSalt, password_hash: fixtureHash },
-    { user_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", tenant_id: "config-viewer", company_name: "Config Viewer", email: "viewer@config.example", password: "TenantPassword2026", role: "viewer", plan_id: "nextfor-atlas", assigned_bot_id: "atencion-cliente", password_salt: fixtureSalt, password_hash: fixtureHash }
+    { user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", tenant_id: "config-a", company_name: "Config A", email: "admin@config-a.example", password: "TenantPassword2026", role: "admin", plan_id: "nextfor-aura", assigned_bot_id: "atencion-cliente", bot_live: true, password_salt: fixtureSalt, password_hash: fixtureHash },
+    { user_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", tenant_id: "config-b", company_name: "Config B", email: "admin@config-b.example", password: "TenantPassword2026", role: "admin", plan_id: "nextfor-uno", assigned_bot_id: "atencion-cliente", bot_live: true, password_salt: fixtureSalt, password_hash: fixtureHash },
+    { user_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", tenant_id: "config-viewer", company_name: "Config Viewer", email: "viewer@config.example", password: "TenantPassword2026", role: "viewer", plan_id: "nextfor-atlas", assigned_bot_id: "atencion-cliente", bot_live: true, password_salt: fixtureSalt, password_hash: fixtureHash },
+    { user_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", tenant_id: "config-inactive", company_name: "Config Inactive", email: "admin@inactive.example", password: "TenantPassword2026", role: "admin", plan_id: "nextfor-uno", assigned_bot_id: "atencion-cliente", password_salt: fixtureSalt, password_hash: fixtureHash }
   ];
   const child = childProcess.spawn(process.execPath, [path.join(__dirname, "index.js")], {
     cwd: __dirname,
@@ -100,6 +101,7 @@ async function requestJson(base, pathName, cookie, options) {
     const cookieA = signedSessionCookie(secret, users[0]);
     const cookieB = signedSessionCookie(secret, users[1]);
     const cookieViewer = signedSessionCookie(secret, users[2]);
+    const cookieInactive = signedSessionCookie(secret, users[3]);
 
     let result = await requestJson(base, "/admin/panel/bot-personality", cookieA);
     assert.strictEqual(result.response.status, 200);
@@ -108,6 +110,8 @@ async function requestJson(base, pathName, cookie, options) {
     assert.strictEqual(result.body.features.shipping, true);
     assert.strictEqual(result.body.features.reminders, false);
     assert.strictEqual(result.body.can_edit, true);
+    assert.strictEqual(result.body.applied, true);
+    assert.match(result.body.configuration_version, /^[a-f0-9]{64}$/);
 
     result = await requestJson(base, "/admin/panel/bot-personality", cookieA, {
       method: "PUT",
@@ -128,6 +132,8 @@ async function requestJson(base, pathName, cookie, options) {
     assert.strictEqual(result.response.status, 200);
     assert.strictEqual(result.body.plan_id, "nextfor-aura", "el plan se deriva de la sesión, no del body");
     assert.strictEqual(result.body.can_edit, true, "el autoguardado debe conservar la pantalla editable");
+    assert.strictEqual(result.body.applied, true, "no debe confirmar éxito sin verificar la configuración live");
+    assert.strictEqual(result.body.applies_to_next_response, true);
     assert.strictEqual(result.body.personality.plan_id, "aura");
     assert.strictEqual(result.body.features.reminders, false);
     assert.strictEqual(result.body.personality.greeting.text, "Hola desde Empresa A");
@@ -157,6 +163,14 @@ async function requestJson(base, pathName, cookie, options) {
       body: JSON.stringify({ personality: { greeting: { text: "No autorizado" } } })
     });
     assert.strictEqual(result.response.status, 401);
+
+    result = await requestJson(base, "/admin/panel/bot-personality", cookieInactive, {
+      method: "PUT",
+      headers: { cookie: cookieInactive, "content-type": "application/json", origin: base },
+      body: JSON.stringify({ personality: { custom_instructions: "No debe confirmar aplicación" } })
+    });
+    assert.strictEqual(result.response.status, 409);
+    assert.strictEqual(result.body.error, "bot_configuration_not_live");
 
     result = await requestJson(base, "/admin/panel/account-profile", cookieA);
     assert.strictEqual(result.response.status, 200);
