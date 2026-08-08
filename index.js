@@ -312,7 +312,7 @@ app.get("/admin/terms", (req, res) => res.type("html").send(renderTermsOfService
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────────
 const PRODUCT_NAME = "NextforIA Chatbot";
-const BOT_VERSION = "v338-customer-access-membership-auth";  // bump cada release; usado por endpoints /admin/*
+const BOT_VERSION = "v339-customer-panel-logout";  // bump cada release; usado por endpoints /admin/*
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "";
 const DASHBOARD_KEY = process.env.DASHBOARD_KEY || "";
 const DASHBOARD_SESSION_COOKIE = "nextforia_dashboard_session";
@@ -681,7 +681,11 @@ const passwordRecoveryRateLimiter = createRateLimiter({
     return String(req.ip || req.socket && req.socket.remoteAddress || "unknown");
   }
 });
-app.use("/admin", adminRateLimiter);
+app.use("/admin", function applyAdminRateLimit(req, res, next) {
+  // A customer must always be able to end the session, even after a burst of panel requests.
+  if (req.method === "POST" && req.path === "/logout") return next();
+  return adminRateLimiter(req, res, next);
+});
 app.use("/admin", function preventAuthenticatedPageCaching(req, res, next) {
   res.setHeader("Cache-Control", "no-store, max-age=0");
   res.setHeader("Pragma", "no-cache");
@@ -698,6 +702,9 @@ app.use("/signature/api", signatureRateLimiter);
 app.use("/admin/signature/client-api", signatureRateLimiter);
 app.use("/admin", async function revalidateCustomerSession(req, res, next) {
   if (!CUSTOMER_ACCESS_V2_ENABLED) return next();
+  // Logging out must remain available even when the membership store is slow or unavailable.
+  // The state-change middleware below still enforces the same-origin requirement.
+  if (req.method === "POST" && req.path === "/logout") return next();
   const requestCookies = parseCookies(req.get("cookie"));
   const hadCustomerCookie = [DASHBOARD_SESSION_COOKIE].concat(LEGACY_DASHBOARD_SESSION_COOKIES).some(function (name) {
     return Object.prototype.hasOwnProperty.call(requestCookies, name);
