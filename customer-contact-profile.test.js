@@ -2,6 +2,7 @@
 
 const assert = require("assert");
 const {
+  buildCustomerContactContext,
   mergeCustomerContactProfile,
   normalizeCustomerContactProfile,
   profilePatchFromAppointment,
@@ -53,6 +54,18 @@ const {
   assert.deepStrictEqual(profilePatchFromCheckoutField("direccion", "Calle 10"), { address: "Calle 10" });
   assert.strictEqual(profilePatchFromOrder({ name: "Lina", city: "Cali" }).city, "Cali");
   assert.strictEqual(profilePatchFromAppointment({ customer_email: "lina@example.com" }).email, "lina@example.com");
+})();
+
+(function buildsNoRepeatAppointmentContext() {
+  const context = buildCustomerContactContext({
+    name: "Santiago",
+    phone: "+573000000000",
+    email: "santiago@example.com"
+  }, { appointmentMode: true, channel: "whatsapp" });
+  assert.ok(context.includes("Nombre: Santiago"));
+  assert.ok(context.includes("Correo: santiago@example.com"));
+  assert.ok(context.includes("No vuelvas a pedirlos"));
+  assert.ok(context.includes("El teléfono de WhatsApp ya sirve como número de contacto"));
 })();
 
 console.log("customer-contact-profile tests passed");

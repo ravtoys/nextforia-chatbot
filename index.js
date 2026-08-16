@@ -126,6 +126,7 @@ const {
   normalizeMemory
 } = require("./customer-intelligence");
 const {
+  buildCustomerContactContext,
   PROFILE_FIELDS: CUSTOMER_CONTACT_PROFILE_FIELDS,
   mergeCustomerContactProfile,
   normalizeCustomerContactProfile,
@@ -133,6 +134,10 @@ const {
   profilePatchFromCheckoutField,
   profilePatchFromOrder
 } = require("./customer-contact-profile");
+const {
+  buildAppointmentDateContext,
+  normalizeTimeZone: normalizeAppointmentTimeZone
+} = require("./appointment-runtime-context");
 const {
   buildBotPersonalityPrompt,
   maxTokensForPersonality,
@@ -4375,6 +4380,10 @@ const CUSTOMER_PROFILE_OPERATIONAL_PROMPT = [
 
 const APPOINTMENT_OPERATIONAL_PROMPT = [
   "REGLAS OPERATIVAS DEL CANAL DE CITAS:",
+  "- Trata la conversación como un formulario acumulativo: conserva cada dato que el cliente ya entregó.",
+  "- Nunca vuelvas a pedir nombre, teléfono, correo, servicio, fecha, hora o consentimiento si ya están confirmados. Pregunta solo el campo obligatorio que falte.",
+  "- En WhatsApp usa el número del canal como teléfono de contacto; no lo preguntes de nuevo salvo que el cliente quiera usar otro.",
+  "- Antes de reservar resume una sola vez los datos reunidos y pide confirmación; no los solicites nuevamente.",
   "- Para consultar un horario usa check_appointment_availability.",
   "- Antes de reservar confirma servicio, fecha/hora, nombre y consentimiento de datos.",
   "- Usa book_appointment únicamente después de que el cliente confirme explícitamente.",
@@ -5932,6 +5941,13 @@ async function executeCheckAppointmentAvailability(tenantId, input, actor) {
   if (!startsAt || !Number.isFinite(parsed.getTime())) {
     return { ok: false, error: "invalid_appointment_datetime" };
   }
+  if (parsed.getTime() <= Date.now()) {
+    return {
+      ok: false,
+      error: "appointment_datetime_in_past",
+      date_context: { current_time_utc: new Date().toISOString() }
+    };
+  }
   const result = await appointmentCalendarService.checkAvailability(tenantId, parsed.toISOString(), durationMinutes, actor);
   let timeZone = cleanRuntimeText(result && result.primary_time_zone, 120) || "America/Bogota";
   let requestedLabel;
@@ -6382,6 +6398,16 @@ async function handleConversationInTurnContext(userId, userMessage, conversation
   }
 
   let customerMemory = await loadCustomerMemory(userId, tenantId);
+  let customerMeta = normalizeCustomerMeta({});
+  try {
+    customerMeta = await loadCustomerMeta(userId, tenantId);
+  } catch (error) {
+    log("warn", "customer_profile_context_load_failed", {
+      tenant_id: tenantId,
+      channel: conversationChannel(userId),
+      error: String(error.message || "profile_context_load_failed").slice(0, 160)
+    });
+  }
   customerMemory = evolveAndPersistCustomerMemory(userId, customerMemory, {
     userMessage,
     checkout: checkouts.get(stateKey),
@@ -6397,7 +6423,7 @@ async function handleConversationInTurnContext(userId, userMessage, conversation
   }
   if (Object.keys(identityProfilePatch).length) {
     try {
-      await saveCustomerMeta(userId, identityProfilePatch, tenantId, {
+      customerMeta = await saveCustomerMeta(userId, identityProfilePatch, tenantId, {
         allowClear: false,
         onlyIfEmpty: true,
         source: "conversation_identity"
@@ -6421,6 +6447,16 @@ async function handleConversationInTurnContext(userId, userMessage, conversation
     limits: ADAPTIVE_TOKEN_LIMITS
   });
   let memoryContext = buildCustomerMemoryContext(customerMemory, { newSession });
+  let customerContactContext = buildCustomerContactContext(customerMeta, {
+    appointmentMode: routeUsesAppointmentBot,
+    channel: conversationRuntime.channel
+  });
+  const appointmentDateContext = routeUsesAppointmentBot
+    ? buildAppointmentDateContext({
+      now: new Date(),
+      timeZone: normalizeAppointmentTimeZone(appointmentConfiguration.time_zone)
+    })
+    : "";
   let onboardingConversationContext = buildCoverageConversationContext(activeClientOnboarding);
   let workingHistory = history.slice(-adaptiveBudget.historyMessages);
   console.log(`[AI budget ${maskedIdentifier(userId)}] tier=${adaptiveBudget.tier} max_tokens=${adaptiveBudget.maxTokens} history=${adaptiveBudget.historyMessages} reasons=${adaptiveBudget.reasons.join(",") || "none"}`);
@@ -6439,9 +6475,11 @@ async function handleConversationInTurnContext(userId, userMessage, conversation
         dynamicSystem: [
           ...(onboardingConversationContext ? [{ type: "text", text: onboardingConversationContext }] : []),
           ...(serviceAreaContext ? [{ type: "text", text: serviceAreaContext }] : []),
+          ...(appointmentDateContext ? [{ type: "text", text: appointmentDateContext }] : []),
           ...(pendingRatings.has(stateKey) ? [{ type: "text", text: "⚠️ NOTA DEL SISTEMA: Cliente acaba de salir de handoff con humano. Pide calificación con send_rating_request ANTES de responder a otra cosa que diga." }] : []),
           ...(cartContextFor(userId, stateKey) ? [{ type: "text", text: cartContextFor(userId, stateKey) }] : []),
-          ...(memoryContext ? [{ type: "text", text: memoryContext }] : [])
+          ...(memoryContext ? [{ type: "text", text: memoryContext }] : []),
+          ...(customerContactContext ? [{ type: "text", text: customerContactContext }] : [])
         ],
         tools: conversationTools
       });
@@ -6593,6 +6631,14 @@ async function handleConversationInTurnContext(userId, userMessage, conversation
             checkout: checkouts.get(stateKey),
             now: new Date().toISOString()
           }, tenantId);
+          if (toolUse.name === "save_customer_profile" && result && result.saved) {
+            const cachedCustomerMeta = customerMetaCache.get(tenantConversationStateKey(userId, tenantId));
+            customerMeta = cachedCustomerMeta && cachedCustomerMeta.meta || customerMeta;
+            customerContactContext = buildCustomerContactContext(customerMeta, {
+              appointmentMode: routeUsesAppointmentBot,
+              channel: conversationRuntime.channel
+            });
+          }
           toolResults.push({
             type: "tool_result",
             tool_use_id: toolUse.id,

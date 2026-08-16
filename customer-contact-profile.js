@@ -139,8 +139,36 @@ function profilePatchFromAppointment(appointment) {
   };
 }
 
+function buildCustomerContactContext(value, options) {
+  const profile = normalizeCustomerContactProfile(value);
+  const input = options && typeof options === "object" ? options : {};
+  const appointmentMode = input.appointmentMode === true;
+  const fields = ["name", "phone", "email"];
+  const labels = {
+    name: "Nombre",
+    phone: "Teléfono",
+    email: "Correo"
+  };
+  const known = fields.filter(function (field) { return !!profile[field]; });
+  if (!known.length) return "";
+  const lines = [
+    "DATOS DE CONTACTO YA CONFIRMADOS PARA ESTE CLIENTE:",
+    ...known.map(function (field) { return "- " + labels[field] + ": " + profile[field]; }),
+    "REGLAS PARA EVITAR PREGUNTAS REPETIDAS:",
+    "- Los campos listados arriba ya fueron entregados y confirmados. No vuelvas a pedirlos.",
+    "- Antes de hacer una pregunta, revisa estos datos y toda la conversación actual; pregunta únicamente un campo obligatorio que aún falte.",
+    "- Si el cliente corrige un dato, usa save_customer_profile y reemplaza el valor anterior.",
+    "- No menciones que existe una base de datos ni enumeres datos personales salvo en el resumen final solicitado por el cliente."
+  ];
+  if (appointmentMode && input.channel === "whatsapp" && profile.phone) {
+    lines.push("- El teléfono de WhatsApp ya sirve como número de contacto. Solo pide otro si el cliente solicita usar uno diferente.");
+  }
+  return lines.join("\n");
+}
+
 module.exports = {
   PROFILE_FIELDS,
+  buildCustomerContactContext,
   emptyCustomerContactProfile,
   mergeCustomerContactProfile,
   normalizeCustomerContactProfile,
