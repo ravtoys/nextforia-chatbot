@@ -1,6 +1,10 @@
 "use strict";
 
 const crypto = require("crypto");
+const {
+  NEXTFORIA_HOME_URL,
+  NEXTFORIA_SETUP_EMAIL_FROM
+} = require("./setup-email-journey");
 
 const CUSTOMER_VISIBLE_PLAN_IDS = ["nextfor-uno", "nextfor-aura", "nextfor-tempo", "nextfor-atlas"];
 const CUSTOMER_VISIBLE_BOT_IDS = ["atencion-cliente", "agendamiento"];
@@ -960,7 +964,6 @@ class InMemoryCustomerAccessStore {
 
 function createResendEmailSender(options) {
   const apiKey = String(options.apiKey || "");
-  const from = String(options.from || "");
   const replyTo = String(options.replyTo || "");
   const axiosClient = options.axiosClient;
   return {
@@ -975,12 +978,12 @@ function createResendEmailSender(options) {
         }).join("") + "</ul>"
         : "";
       const response = await axiosClient.post("https://api.resend.com/emails", {
-        from: from,
+        from: NEXTFORIA_SETUP_EMAIL_FROM,
         to: [message.to],
         reply_to: replyTo || undefined,
         subject: "Crea tu acceso a Nextfor IA",
-        text: "Hola. " + message.company_name + " fue creado en Nextfor IA. Define tu contraseña usando este enlace privado (vence el " + message.expires_at + "): " + message.setup_url + fallbackText,
-        html: "<p>Hola.</p><p><strong>" + escapeHtml(message.company_name) + "</strong> fue creado en Nextfor IA.</p><p><a href=\"" + escapeHtml(message.setup_url) + "\">Crear mi contraseña</a></p>" + fallbackHtml + "<p>Este enlace es privado, de un solo uso y vence el " + escapeHtml(message.expires_at) + ".</p>"
+        text: "Hola. " + message.company_name + " fue creado en Nextfor IA. Define tu contraseña usando este enlace privado (vence el " + message.expires_at + "): " + message.setup_url + fallbackText + "\n\nEntrar a Nextfor: " + NEXTFORIA_HOME_URL,
+        html: "<p>Hola.</p><p><strong>" + escapeHtml(message.company_name) + "</strong> fue creado en Nextfor IA.</p><p><a href=\"" + escapeHtml(message.setup_url) + "\">Crear mi contraseña</a></p>" + fallbackHtml + "<p>Este enlace es privado, de un solo uso y vence el " + escapeHtml(message.expires_at) + ".</p><p><a href=\"" + NEXTFORIA_HOME_URL + "\">Entrar a nextforia.com</a></p>"
       }, {
         headers: { Authorization: "Bearer " + apiKey, "Content-Type": "application/json" },
         timeout: 8000
@@ -989,12 +992,12 @@ function createResendEmailSender(options) {
     },
     async sendPasswordRecovery(message) {
       const response = await axiosClient.post("https://api.resend.com/emails", {
-        from: from,
+        from: NEXTFORIA_SETUP_EMAIL_FROM,
         to: [message.to],
         reply_to: replyTo || undefined,
         subject: "Recupera tu acceso a Nextfor IA",
-        text: "Recibimos una solicitud para cambiar tu contraseña. Usa este enlace privado: " + message.recovery_url + "\n\nEl enlace vence el " + message.expires_at + ". Si no solicitaste este cambio, ignora este mensaje.",
-        html: "<p>Recibimos una solicitud para cambiar tu contraseña.</p><p><a href=\"" + escapeHtml(message.recovery_url) + "\">Crear una nueva contraseña</a></p><p>Este enlace es privado, de un solo uso y vence el " + escapeHtml(message.expires_at) + ".</p><p>Si no solicitaste este cambio, ignora este mensaje.</p>"
+        text: "Recibimos una solicitud para cambiar tu contraseña. Usa este enlace privado: " + message.recovery_url + "\n\nEl enlace vence el " + message.expires_at + ". Si no solicitaste este cambio, ignora este mensaje.\n\nEntrar a Nextfor: " + NEXTFORIA_HOME_URL,
+        html: "<p>Recibimos una solicitud para cambiar tu contraseña.</p><p><a href=\"" + escapeHtml(message.recovery_url) + "\">Crear una nueva contraseña</a></p><p>Este enlace es privado, de un solo uso y vence el " + escapeHtml(message.expires_at) + ".</p><p>Si no solicitaste este cambio, ignora este mensaje.</p><p><a href=\"" + NEXTFORIA_HOME_URL + "\">Entrar a nextforia.com</a></p>"
       }, {
         headers: { Authorization: "Bearer " + apiKey, "Content-Type": "application/json" },
         timeout: 8000

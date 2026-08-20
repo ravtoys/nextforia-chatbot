@@ -316,8 +316,20 @@ async function expectError(promise, code, status) {
     fallback_setup_urls: ["https://nextforia-staging.onrender.com/admin/setup/tenant-f?invite=token"],
     expires_at: "2026-07-22T12:00:00.000Z"
   });
+  assert.strictEqual(resendPayload.from, "Nextfor IA <info@nextforia.com>");
   assert(resendPayload.text.includes("https://nextforia-staging.onrender.com/admin/setup/tenant-f?invite=token"));
   assert(resendPayload.html.includes("https://nextforia-staging.onrender.com/admin/setup/tenant-f?invite=token"));
+  assert(resendPayload.text.includes("https://nextforia.com"));
+  assert(resendPayload.html.includes("https://nextforia.com"));
+
+  await resendSender.sendPasswordRecovery({
+    to: "admin@empresa.example",
+    recovery_url: "https://nextforia.com/admin/recover-password?token=private-token",
+    expires_at: "2026-07-22T13:00:00.000Z"
+  });
+  assert.strictEqual(resendPayload.from, "Nextfor IA <info@nextforia.com>");
+  assert(resendPayload.text.includes("https://nextforia.com"));
+  assert(resendPayload.html.includes("https://nextforia.com"));
 
   console.log("customer-access-v2.test.js: ok");
 })().catch(function (error) {

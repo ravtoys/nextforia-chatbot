@@ -89,6 +89,16 @@ async function nextEvent(stream, expectedName, timeoutMs) {
   }
 }
 
+async function waitForOutbox(base, cookie, count) {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    const result = await json(base, "/admin/test/customer-notification-email-outbox", cookie);
+    if (result.body.count >= count) return result.body;
+    await new Promise(function (resolve) { setTimeout(resolve, 50); });
+  }
+  throw new Error("notification_email_outbox_timeout");
+}
+
 (async function run() {
   const port = await availablePort();
   const base = "http://127.0.0.1:" + port;
@@ -111,6 +121,7 @@ async function nextEvent(stream, expectedName, timeoutMs) {
       DATA_ENCRYPTION_KEY: crypto.randomBytes(32).toString("base64url"),
       CUSTOMER_ACCESS_V2_ENABLED: "1",
       CUSTOMER_ACCESS_TEST_MODE: "1",
+      CUSTOMER_NOTIFICATION_EMAIL_TEST_MODE: "1",
       CUSTOMER_ACCESS_TEST_USERS: JSON.stringify(fixtures),
       PUBLIC_BASE_URL: "https://test.nextforia.example",
       CUSTOMER_PANEL_BASE_URL: "https://test.nextforia.example",
@@ -127,6 +138,22 @@ async function nextEvent(stream, expectedName, timeoutMs) {
     await waitForServer(child, port);
     const cookieA = await login(base, "admin@a.example");
     const cookieB = await login(base, "admin@b.example");
+    let emailPreferences = await json(base, "/admin/panel/notifications/email-preferences", cookieA);
+    assert.strictEqual(emailPreferences.response.status, 200);
+    assert.strictEqual(emailPreferences.body.preferences.enabled, false);
+    assert.strictEqual(emailPreferences.body.preferences.recipient, "admin@a.example");
+    emailPreferences = await json(base, "/admin/panel/notifications/email-preferences", cookieA, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        enabled: true,
+        types: { payment_pending: true, shipping_pending: false, sales_opportunity: false, product_update: false, human_attention: true }
+      })
+    });
+    assert.strictEqual(emailPreferences.response.status, 200);
+    assert.strictEqual(emailPreferences.body.preferences.enabled, true);
+    const preferencesB = await json(base, "/admin/panel/notifications/email-preferences", cookieB);
+    assert.strictEqual(preferencesB.body.preferences.enabled, false, "tenant B must not inherit tenant A email preferences");
     const streamA = await openEvents(base, cookieA);
     await nextEvent(streamA, "ready", 3000);
 
@@ -142,6 +169,12 @@ async function nextEvent(stream, expectedName, timeoutMs) {
     assert.strictEqual(event.type, "human_handoff_required");
     assert(event.action_url.includes("conversation=ig%3A178500000001"));
     streamA.controller.abort();
+    const handoffEmailsA = await waitForOutbox(base, cookieA, 1);
+    assert.strictEqual(handoffEmailsA.items[0].template, "human_attention");
+    assert.strictEqual(handoffEmailsA.items[0].tenant_id, "tenant-a");
+    assert.strictEqual(handoffEmailsA.items[0].to, "admin@a.example");
+    const handoffEmailsB = await json(base, "/admin/test/customer-notification-email-outbox", cookieB);
+    assert.strictEqual(handoffEmailsB.body.count, 0, "tenant B must never see or receive tenant A email delivery");
 
     result = await json(base, "/admin/panel/notifications", cookieA);
     assert.strictEqual(result.response.status, 200);
@@ -181,6 +214,9 @@ async function nextEvent(stream, expectedName, timeoutMs) {
     assert.strictEqual(orderEvent.order_id, "order-a-1001");
     assert.strictEqual(orderEvent.action_url, "/admin/panel?tab=orders&order=order-a-1001");
     orderStreamA.controller.abort();
+    const orderEmailsA = await waitForOutbox(base, cookieA, 2);
+    assert.strictEqual(orderEmailsA.items[1].template, "payment_pending");
+    assert.strictEqual((await json(base, "/admin/test/customer-notification-email-outbox", cookieB)).body.count, 0);
 
     result = await json(base, "/admin/panel/notifications", cookieA);
     assert.strictEqual(result.body.unread_count, 1);

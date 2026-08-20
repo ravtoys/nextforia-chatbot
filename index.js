@@ -50,6 +50,10 @@ const {
   enrichCustomerOrderContact
 } = require("./customer-orders");
 const {
+  CUSTOMER_CONVERSATION_CLEAR_TOOL,
+  filterClearedConversationTurns
+} = require("./customer-conversation-clear");
+const {
   checkoutAmounts,
   confirmedPaymentMessage
 } = require("./checkout-shipping");
@@ -85,6 +89,23 @@ const {
   createMemoryEmailSender,
   createResendEmailSender
 } = require("./customer-access-v2");
+const {
+  NEXTFORIA_SETUP_EMAIL_FROM,
+  createResendSetupJourneySender,
+  setupEmailDedupeKey
+} = require("./setup-email-journey");
+const {
+  createResendCustomerNotificationEmailSender
+} = require("./customer-notification-emails");
+const {
+  InMemoryCustomerNotificationEmailStore,
+  SupabaseCustomerNotificationEmailStore,
+  createCustomerNotificationEmailService
+} = require("./customer-notification-email-service");
+const {
+  SupabaseSetupEmailJourneyStore,
+  createSetupEmailJourneyService
+} = require("./setup-email-journey-service");
 const {
   DEFAULT_PLATFORM_GOALS,
   PLATFORM_GOAL_RECORD_ID,
@@ -380,7 +401,7 @@ app.get("/admin/terms", (req, res) => res.type("html").send(renderTermsOfService
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────────
 const PRODUCT_NAME = "NextforIA Chatbot";
-const BOT_VERSION = "v404-customer-panel-mobile-profile-sections";  // bump cada release; usado por endpoints /admin/*
+const BOT_VERSION = "v418-conversation-trash";  // bump cada release; usado por endpoints /admin/*
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "";
 const DASHBOARD_KEY = process.env.DASHBOARD_KEY || "";
 const DASHBOARD_SESSION_COOKIE = "nextforia_dashboard_session";
@@ -460,6 +481,9 @@ const APPOINTMENT_SETUP_TENANT_IDS = parseAppointmentSetupTenantIds(process.env.
 const CUSTOMER_ACCESS_TEST_MODE = process.env.NODE_ENV === "test" && process.env.CUSTOMER_ACCESS_TEST_MODE === "1";
 const CUSTOMER_ACCESS_V2_GATE = process.env.CUSTOMER_ACCESS_V2_ENABLED === "1";
 const CHANNEL_CONNECTIONS_V1_ENABLED = process.env.CHANNEL_CONNECTIONS_V1_ENABLED === "1";
+// La PWA (manifest, iconos, instalacion, offline) va detras de esta bandera.
+// Apagada -> el panel es byte por byte el de hoy. Se prende con PWA_V1_ENABLED=1.
+const PWA_V1_ENABLED = process.env.PWA_V1_ENABLED === "1";
 const CUSTOMER_ORDERS_V1_FLAG = String(process.env.CUSTOMER_ORDERS_V1_ENABLED || "").trim();
 // The customer orders module is part of the approved support-bot panel. Keep it
 // enabled by default in every environment and retain an explicit emergency
@@ -532,9 +556,14 @@ const CHANNEL_CONNECTIONS_V1_VISIBLE = CHANNEL_CONNECTIONS_V1_ENABLED ||
   CHANNEL_CONNECTIONS_STAGING_PREVIEW || CHANNEL_CONNECTIONS_PRODUCTION_PREVIEW ||
   CHANNEL_CONNECTIONS_DEDICATED_STORE_ENABLED;
 const CUSTOMER_ACCESS_EMAIL_PROVIDER = String(process.env.CUSTOMER_ACCESS_EMAIL_PROVIDER || "").trim().toLowerCase();
-const CUSTOMER_INVITE_FROM_EMAIL = String(process.env.CUSTOMER_INVITE_FROM_EMAIL || "").trim();
-const CUSTOMER_INVITE_REPLY_TO = String(process.env.CUSTOMER_INVITE_REPLY_TO || "").trim();
+const CUSTOMER_INVITE_FROM_EMAIL = NEXTFORIA_SETUP_EMAIL_FROM;
+const CUSTOMER_INVITE_REPLY_TO = String(process.env.CUSTOMER_INVITE_REPLY_TO || "info@nextforia.com").trim();
 const RESEND_API_KEY = String(process.env.RESEND_API_KEY || "").trim();
+const SETUP_EMAIL_JOURNEY_ENABLED = process.env.SETUP_EMAIL_JOURNEY_ENABLED === "1";
+const CUSTOMER_NOTIFICATION_EMAIL_TEST_MODE = process.env.NODE_ENV === "test" && process.env.CUSTOMER_NOTIFICATION_EMAIL_TEST_MODE === "1";
+const CUSTOMER_NOTIFICATION_EMAIL_GATE = process.env.CUSTOMER_NOTIFICATION_EMAIL_ENABLED === "1";
+const SETUP_EMAIL_INCOMPLETE_DELAY_MINUTES = boundedEnvInt("SETUP_EMAIL_INCOMPLETE_DELAY_MINUTES", 120, 30, 10080);
+const SETUP_EMAIL_PAYMENT_DELAY_MINUTES = boundedEnvInt("SETUP_EMAIL_PAYMENT_DELAY_MINUTES", 120, 30, 10080);
 const BOT_OPS_ALERT_FROM_EMAIL = String(process.env.BOT_OPS_ALERT_FROM_EMAIL || CUSTOMER_INVITE_FROM_EMAIL || "").trim();
 const BOT_OPS_ALERT_EMAILS = String(process.env.BOT_OPS_ALERT_EMAIL || "").split(",").map(function (value) {
   return value.trim().toLowerCase();
@@ -556,6 +585,9 @@ const CUSTOMER_ACCESS_PRODUCTION_AUTO_ENABLED = process.env.CUSTOMER_ACCESS_V2_E
   && !!DATA_ENCRYPTION_KEY
   && !!CUSTOMER_PANEL_BASE_URL;
 const CUSTOMER_ACCESS_V2_ENABLED = CUSTOMER_ACCESS_V2_GATE || CUSTOMER_ACCESS_TEST_MODE || CUSTOMER_ACCESS_PRODUCTION_AUTO_ENABLED;
+const CUSTOMER_NOTIFICATION_EMAIL_ENABLED = CUSTOMER_NOTIFICATION_EMAIL_TEST_MODE || (
+  CUSTOMER_NOTIFICATION_EMAIL_GATE && CUSTOMER_ACCESS_V2_ENABLED && SUPABASE_ENABLED && !!RESEND_API_KEY && !!CUSTOMER_PANEL_BASE_URL
+);
 const LEGACY_CUSTOMER_PANEL_USERS_ENABLED = !CUSTOMER_ACCESS_V2_ENABLED || process.env.NODE_ENV === "test" || process.env.LEGACY_CUSTOMER_PANEL_USERS_ENABLED === "1";
 const PAYMENTS_PRODUCTION_AUTO_ENABLED = process.env.PAYMENTS_V1_ENABLED !== "0"
   && process.env.NODE_ENV === "production"
@@ -727,7 +759,8 @@ const CUSTOMER_PANEL_INTERNAL_STATE_TOOLS = Object.freeze([
   CHANNEL_CONNECTION_STATE_TOOL,
   SHOPIFY_SESSION_STATE_TOOL,
   SIGNATURE_TOOL,
-  APPOINTMENT_CALENDAR_CONNECTION_STATE_TOOL
+  APPOINTMENT_CALENDAR_CONNECTION_STATE_TOOL,
+  CUSTOMER_CONVERSATION_CLEAR_TOOL
 ]);
 const CUSTOMER_PANEL_TURN_COLUMNS = "id,ts,tenant_id,phone_number_id,channel,user_id,user_message,bot_reply,tools,zero_result_queries,handoff,rating,num_tools,status,eval";
 const RETARGETING_EVENT_RECORD_PREFIX = "retargeting-events:";
@@ -770,7 +803,13 @@ if (process.env.NODE_ENV === "production" && SUPABASE_ENABLED && !DATA_ENCRYPTIO
 if (CUSTOMER_ACCESS_V2_ENABLED && !CUSTOMER_ACCESS_TEST_MODE && !SUPABASE_ENABLED) productionConfigErrors.push("SUPABASE_URL and SUPABASE_KEY are required when CUSTOMER_ACCESS_V2_ENABLED=1");
 if (CUSTOMER_ACCESS_V2_ENABLED && !CUSTOMER_PANEL_BASE_URL) productionConfigErrors.push("CUSTOMER_PANEL_BASE_URL must be a valid HTTPS origin when CUSTOMER_ACCESS_V2_ENABLED=1");
 if (CUSTOMER_ACCESS_V2_GATE && !CUSTOMER_ACCESS_TEST_MODE && CUSTOMER_ACCESS_EMAIL_PROVIDER !== "resend") productionConfigErrors.push("CUSTOMER_ACCESS_EMAIL_PROVIDER=resend is required when CUSTOMER_ACCESS_V2_ENABLED=1");
-if (CUSTOMER_ACCESS_V2_GATE && !CUSTOMER_ACCESS_TEST_MODE && (!RESEND_API_KEY || !CUSTOMER_INVITE_FROM_EMAIL)) productionConfigErrors.push("RESEND_API_KEY and CUSTOMER_INVITE_FROM_EMAIL are required when CUSTOMER_ACCESS_V2_ENABLED=1");
+if (CUSTOMER_ACCESS_V2_GATE && !CUSTOMER_ACCESS_TEST_MODE && !RESEND_API_KEY) productionConfigErrors.push("RESEND_API_KEY is required when CUSTOMER_ACCESS_V2_ENABLED=1");
+if (SETUP_EMAIL_JOURNEY_ENABLED && !SUPABASE_ENABLED) productionConfigErrors.push("Supabase is required when SETUP_EMAIL_JOURNEY_ENABLED=1");
+if (SETUP_EMAIL_JOURNEY_ENABLED && !RESEND_API_KEY) productionConfigErrors.push("RESEND_API_KEY is required when SETUP_EMAIL_JOURNEY_ENABLED=1");
+if (CUSTOMER_NOTIFICATION_EMAIL_GATE && !CUSTOMER_NOTIFICATION_EMAIL_TEST_MODE && !SUPABASE_ENABLED) productionConfigErrors.push("Supabase is required when CUSTOMER_NOTIFICATION_EMAIL_ENABLED=1");
+if (CUSTOMER_NOTIFICATION_EMAIL_GATE && !CUSTOMER_NOTIFICATION_EMAIL_TEST_MODE && !CUSTOMER_ACCESS_V2_ENABLED) productionConfigErrors.push("CUSTOMER_ACCESS_V2_ENABLED=1 is required when CUSTOMER_NOTIFICATION_EMAIL_ENABLED=1");
+if (CUSTOMER_NOTIFICATION_EMAIL_GATE && !CUSTOMER_NOTIFICATION_EMAIL_TEST_MODE && !RESEND_API_KEY) productionConfigErrors.push("RESEND_API_KEY is required when CUSTOMER_NOTIFICATION_EMAIL_ENABLED=1");
+if (CUSTOMER_NOTIFICATION_EMAIL_GATE && !CUSTOMER_NOTIFICATION_EMAIL_TEST_MODE && !CUSTOMER_PANEL_BASE_URL) productionConfigErrors.push("CUSTOMER_PANEL_BASE_URL is required when CUSTOMER_NOTIFICATION_EMAIL_ENABLED=1");
 if ((WEB_PUSH_VAPID_PUBLIC_KEY || WEB_PUSH_VAPID_PRIVATE_KEY) && !WEB_PUSH_CONFIGURED) productionConfigErrors.push("WEB_PUSH_VAPID_PUBLIC_KEY, WEB_PUSH_VAPID_PRIVATE_KEY and WEB_PUSH_VAPID_SUBJECT must be configured together");
 if (CHANNEL_CONNECTIONS_V1_ENABLED && !CHANNEL_CONNECTIONS_TEST_MODE && !SUPABASE_ENABLED) productionConfigErrors.push("Supabase is required when CHANNEL_CONNECTIONS_V1_ENABLED=1");
 if (CHANNEL_CONNECTIONS_V1_ENABLED && !DATA_ENCRYPTION_KEY) productionConfigErrors.push("DATA_ENCRYPTION_KEY is required when CHANNEL_CONNECTIONS_V1_ENABLED=1");
@@ -1260,9 +1299,91 @@ if (WEB_PUSH_CONFIGURED) {
     }
   };
 }
+const customerNotificationEmailTestOutbox = [];
+const customerNotificationEmailStore = CUSTOMER_NOTIFICATION_EMAIL_ENABLED
+  ? (CUSTOMER_NOTIFICATION_EMAIL_TEST_MODE
+      ? new InMemoryCustomerNotificationEmailStore()
+      : new SupabaseCustomerNotificationEmailStore({ url: SUPABASE_URL, headers: SB_HEADERS, axiosClient: axios }))
+  : new InMemoryCustomerNotificationEmailStore();
+const customerNotificationEmailSender = CUSTOMER_NOTIFICATION_EMAIL_ENABLED
+  ? (CUSTOMER_NOTIFICATION_EMAIL_TEST_MODE
+      ? {
+          send: async function (message) {
+            customerNotificationEmailTestOutbox.push(JSON.parse(JSON.stringify(message)));
+            return { id: "test-customer-notification-email-" + customerNotificationEmailTestOutbox.length };
+          }
+        }
+      : createResendCustomerNotificationEmailSender({
+          apiKey: RESEND_API_KEY,
+          replyTo: CUSTOMER_INVITE_REPLY_TO,
+          axiosClient: axios
+        }))
+  : null;
+const customerNotificationEmailService = createCustomerNotificationEmailService({
+  store: customerNotificationEmailStore,
+  sender: customerNotificationEmailSender,
+  available: CUSTOMER_NOTIFICATION_EMAIL_ENABLED,
+  baseUrl: CUSTOMER_PANEL_BASE_URL || PUBLIC_BASE_URL || "https://nextforia.com",
+  recipientAllowed: async function (preference) {
+    if (!CUSTOMER_ACCESS_V2_ENABLED) return false;
+    const recipient = String(preference && preference.recipient || "").trim().toLowerCase();
+    const actorId = String(preference && preference.actor_id || "").trim().toLowerCase();
+    if (!recipient || recipient !== actorId) return false;
+    const membership = await customerAccessStore.activeUserByEmail(recipient);
+    return !!(membership && membership.active && membership.status === "active" &&
+      cleanTenantId(membership.tenant_id) === cleanTenantId(preference.tenant_id) &&
+      String(membership.email_normalized || "").trim().toLowerCase() === recipient);
+  },
+  deliveryAllowed: async function (delivery) {
+    if (!delivery || delivery.template_key !== "shipping_pending") return true;
+    const first = delivery.payload && Array.isArray(delivery.payload.orders) && delivery.payload.orders[0];
+    const orderId = first && String(first.id || "").trim();
+    if (!orderId) return false;
+    try {
+      const order = await customerOrderService.get(delivery.tenant_id, orderId);
+      return !!(order && ["pagado", "preparacion"].includes(order.stage) && !order.tracking_sent_at);
+    } catch (_) {
+      return false;
+    }
+  }
+});
+let customerNotificationEmailProcessing = false;
+
+async function processCustomerNotificationEmails() {
+  if (!CUSTOMER_NOTIFICATION_EMAIL_ENABLED || customerNotificationEmailProcessing) return null;
+  customerNotificationEmailProcessing = true;
+  try {
+    const outcome = await customerNotificationEmailService.processDue(20);
+    if (outcome.sent || outcome.failed || outcome.cancelled) {
+      log(outcome.failed ? "warn" : "info", "customer_notification_emails_processed", outcome);
+    }
+    return outcome;
+  } catch (error) {
+    log("warn", "customer_notification_email_worker_failed", {
+      error: String(error && error.message || "email_worker_failed").slice(0, 180)
+    });
+    return null;
+  } finally {
+    customerNotificationEmailProcessing = false;
+  }
+}
+
+if (CUSTOMER_NOTIFICATION_EMAIL_ENABLED) {
+  const customerNotificationEmailTimer = setInterval(processCustomerNotificationEmails, 60000);
+  if (customerNotificationEmailTimer.unref) customerNotificationEmailTimer.unref();
+  setTimeout(processCustomerNotificationEmails, 1000);
+}
 const customerNotificationService = createCustomerNotificationService({
   store: SUPABASE_ENABLED ? persistentCustomerNotificationStore : new InMemoryCustomerNotificationStore(),
   pushSender: customerNotificationPushSender,
+  emailDelivery: {
+    available: CUSTOMER_NOTIFICATION_EMAIL_ENABLED,
+    scheduleNotification: async function (notification) {
+      const result = await customerNotificationEmailService.scheduleNotification(notification);
+      if (result && result.scheduled) setTimeout(processCustomerNotificationEmails, 0);
+      return result;
+    }
+  },
   subscriptionAllowed: async function (subscription) {
     if (!CUSTOMER_ACCESS_V2_ENABLED) return true;
     const email = String(subscription && subscription.actor_id || "").trim().toLowerCase();
@@ -1403,7 +1524,7 @@ if (CUSTOMER_ACCESS_TEST_MODE && process.env.CUSTOMER_ACCESS_TEST_INVITATIONS) {
 const customerAccessEmailSender = CUSTOMER_ACCESS_V2_ENABLED
   ? (CUSTOMER_ACCESS_TEST_MODE
       ? createMemoryEmailSender()
-      : createResendEmailSender({ apiKey: RESEND_API_KEY, from: CUSTOMER_INVITE_FROM_EMAIL, replyTo: CUSTOMER_INVITE_REPLY_TO, axiosClient: axios }))
+      : createResendEmailSender({ apiKey: RESEND_API_KEY, replyTo: CUSTOMER_INVITE_REPLY_TO, axiosClient: axios }))
   : null;
 const customerAccessService = CUSTOMER_ACCESS_V2_ENABLED
   ? createCustomerAccessService({
@@ -2433,6 +2554,116 @@ const paymentService = PAYMENTS_V1_ENABLED ? createPaymentService({
   publicBaseUrl: PUBLIC_BASE_URL
 }) : null;
 
+function setupEmailRecipient(auth, record, tenant) {
+  const answers = record && record.answers || {};
+  const business = answers.business || {};
+  const team = answers.team || {};
+  return String(
+    auth && (auth.email || auth.username) ||
+    tenant && (tenant.admin_email || tenant.email) ||
+    team.admin_email || business.contact_email || ""
+  ).trim().toLowerCase();
+}
+
+function setupEmailCustomerName(auth, record, tenant) {
+  const answers = record && record.answers || {};
+  const business = answers.business || {};
+  const team = answers.team || {};
+  return String(
+    team.admin_name || business.contact_name ||
+    auth && auth.name || tenant && (tenant.company_name || tenant.name) ||
+    business.brand_name || ""
+  ).trim().slice(0, 120);
+}
+
+function setupEmailWhatsAppUrl(record, tenant) {
+  const answers = record && record.answers || {};
+  const meta = answers.meta || {};
+  const digits = String(meta.whatsapp_number || tenant && tenant.display_phone || "").replace(/\D/g, "");
+  return digits.length >= 8 && digits.length <= 15 ? "https://wa.me/" + digits : "";
+}
+
+async function setupEmailJourneyApplicable(row) {
+  if (!row || !row.tenant_id) return false;
+  if (row.template_key === "welcome") return true;
+  const record = await loadClientOnboarding(true, row.tenant_id).catch(function () { return null; });
+  if (row.template_key === "live") {
+    return !!record && setupReviewSummary(record).status === "live";
+  }
+  if (row.template_key === "training_incomplete") return !!record && record.setup_completed !== true;
+  if (row.template_key === "preparing") {
+    return !!record && record.setup_completed === true && setupReviewSummary(record).status === "testing";
+  }
+  if (row.template_key === "payment_abandoned") {
+    if (!PAYMENTS_V1_ENABLED || !paymentService) return false;
+    const billing = await paymentService.tenantBilling(row.tenant_id).catch(function () { return null; });
+    return !!billing && !billingMakesCustomer(billing) && String(billing.payment_status || "").toLowerCase() === "pending";
+  }
+  return false;
+}
+
+const setupEmailJourneyStore = SETUP_EMAIL_JOURNEY_ENABLED
+  ? new SupabaseSetupEmailJourneyStore({
+      url: SUPABASE_URL,
+      headers: SB_HEADERS,
+      axiosClient: axios
+    })
+  : null;
+const setupEmailJourneySender = SETUP_EMAIL_JOURNEY_ENABLED
+  ? createResendSetupJourneySender({
+      apiKey: RESEND_API_KEY,
+      replyTo: CUSTOMER_INVITE_REPLY_TO,
+      axiosClient: axios
+    })
+  : null;
+const setupEmailJourneyService = SETUP_EMAIL_JOURNEY_ENABLED
+  ? createSetupEmailJourneyService({
+      store: setupEmailJourneyStore,
+      sender: setupEmailJourneySender,
+      shouldSend: setupEmailJourneyApplicable
+    })
+  : null;
+let setupEmailJourneyProcessing = false;
+
+async function processSetupEmailJourney() {
+  if (!setupEmailJourneyService || setupEmailJourneyProcessing) return null;
+  setupEmailJourneyProcessing = true;
+  try {
+    const outcome = await setupEmailJourneyService.processDue(20);
+    if (outcome.sent || outcome.failed || outcome.cancelled) {
+      log(outcome.failed ? "warn" : "info", "setup_email_journey_processed", outcome);
+    }
+    return outcome;
+  } catch (error) {
+    log("warn", "setup_email_journey_failed", { error: cleanRuntimeText(error && error.message, 240) });
+    return null;
+  } finally {
+    setupEmailJourneyProcessing = false;
+  }
+}
+
+async function scheduleSetupEmail(input) {
+  if (!setupEmailJourneyService) return null;
+  try {
+    const scheduled = await setupEmailJourneyService.schedule(input);
+    setTimeout(processSetupEmailJourney, 0);
+    return scheduled;
+  } catch (error) {
+    log("warn", "setup_email_schedule_failed", {
+      tenant_id: cleanTenantId(input && input.tenant_id),
+      template: cleanRuntimeText(input && input.template, 40),
+      error: cleanRuntimeText(error && error.message, 240)
+    });
+    return null;
+  }
+}
+
+if (SETUP_EMAIL_JOURNEY_ENABLED) {
+  const setupEmailJourneyTimer = setInterval(processSetupEmailJourney, 60000);
+  if (setupEmailJourneyTimer.unref) setupEmailJourneyTimer.unref();
+  setTimeout(processSetupEmailJourney, 1000);
+}
+
 async function persistAppointment(row) {
   if (!SUPABASE_APPOINTMENTS_ENABLED) return false;
   const payload = {
@@ -3019,6 +3250,63 @@ function isCustomerMetaTurn(turn) {
   return tools.includes(CUSTOMER_META_TOOL);
 }
 
+function isCustomerConversationClearTurn(turn) {
+  const tools = Array.isArray(turn && turn.tools) ? turn.tools : [];
+  return tools.includes(CUSTOMER_CONVERSATION_CLEAR_TOOL);
+}
+
+function filterClearedCustomerConversationTurns(turns, clearTurns, tenantId) {
+  return filterClearedConversationTurns(turns, clearTurns, tenantId, {
+    cleanTenantId,
+    normalizeUserId: normalizeConversationUserId,
+    isInternalTurn: isInternalAdminTurn
+  });
+}
+
+async function loadCustomerConversationClearTurns(tenantId) {
+  const cleanTenant = cleanTenantId(tenantId);
+  if (!cleanTenant) return [];
+  if (SUPABASE_ENABLED) {
+    const rows = await supabaseFetchLatestToolStates(CUSTOMER_CONVERSATION_CLEAR_TOOL, { tenantId: cleanTenant });
+    return (rows || []).map(normalizeTurnRow);
+  }
+  return conversationLogs.filter(function (turn) {
+    return cleanTenantId(turn && (turn.tenantId || turn.tenant_id)) === cleanTenant && isCustomerConversationClearTurn(turn);
+  });
+}
+
+async function recordCustomerConversationClear(userId, tenantId, actor) {
+  const clearedAt = new Date().toISOString();
+  const payload = {
+    tenant_id: cleanTenantId(tenantId),
+    user_id: normalizeConversationUserId(userId),
+    cleared_at: clearedAt,
+    cleared_by: cleanRuntimeText(actor, 160) || "customer_panel"
+  };
+  const rec = {
+    ts: clearedAt,
+    tenantId: payload.tenant_id,
+    channel: conversationChannel(payload.user_id),
+    userId: payload.user_id,
+    sourceEventId: "customer-conversation-clear:" + crypto.createHash("sha256").update(payload.user_id).digest("hex"),
+    userMessage: "",
+    botReply: "[CustomerConversationClear] " + JSON.stringify(payload),
+    tools: [CUSTOMER_CONVERSATION_CLEAR_TOOL],
+    zeroResultQueries: [],
+    handoff: false,
+    rating: null,
+    numTools: 1,
+    status: "ok",
+    eval: { skip: true, reason: CUSTOMER_CONVERSATION_CLEAR_TOOL }
+  };
+  if (SUPABASE_ENABLED) await supabaseInsertStrict(rec);
+  else {
+    conversationLogs.push(rec);
+    if (conversationLogs.length > 300) conversationLogs.shift();
+  }
+  return payload;
+}
+
 function isDashboardCustomerUserTurn(turn) {
   const tools = Array.isArray(turn && turn.tools) ? turn.tools : [];
   return tools.includes(DASHBOARD_CUSTOMER_USER_TOOL);
@@ -3077,8 +3365,9 @@ function isShopifySessionStateTurn(turn) {
 function isInternalAdminTurn(turn) {
   const botReply = String(turn && turn.botReply || "");
   const tools = Array.isArray(turn && turn.tools) ? turn.tools : [];
-  if (/^\[(ShopifySessionState|ChannelConnectionState|AppointmentCalendarConnectionState|NextforSignature|CustomerMemory|ClientOnboarding|CustomerSetupQuestionnaire|DashboardUser|SuperAdminAccess|RetargetingEvent|PublicCustomerAccess|InstagramProfile|LegacyClientVisibility|BotSetup|CustomerPanelNotification|CustomerPanelNotificationRead|CustomerPanelPushSubscription|CustomerOrderState|Meta|DeliveryFailure)\]\s*/.test(botReply)) return true;
+  if (/^\[(ShopifySessionState|ChannelConnectionState|AppointmentCalendarConnectionState|NextforSignature|CustomerMemory|ClientOnboarding|CustomerSetupQuestionnaire|DashboardUser|SuperAdminAccess|RetargetingEvent|PublicCustomerAccess|InstagramProfile|LegacyClientVisibility|BotSetup|CustomerConversationClear|CustomerPanelNotification|CustomerPanelNotificationRead|CustomerPanelPushSubscription|CustomerOrderState|Meta|DeliveryFailure)\]\s*/.test(botReply)) return true;
   return isCustomerMetaTurn(turn) ||
+    isCustomerConversationClearTurn(turn) ||
     isDashboardCustomerUserTurn(turn) ||
     isSuperAdminAccessTurn(turn) ||
     isBotSetupTurn(turn) ||
@@ -4888,6 +5177,47 @@ function splitMetaMessageText(value, maxLength) {
   return chunks.length ? chunks : [""];
 }
 
+function instagramStandardWindowClosed(error) {
+  const metaError = error && error.response && error.response.data && error.response.data.error || {};
+  return Number(metaError.code) === 10 && Number(metaError.error_subcode) === 2534022;
+}
+
+function rememberDeliveryFailure(options, input) {
+  const target = options && options.delivery_result;
+  if (!target || typeof target !== "object") return;
+  Object.assign(target, input || {});
+}
+
+async function deliverInstagramTextChunk(input) {
+  const url = `${input.graphOrigin}/${META_GRAPH_VERSION}/${input.sendId}/messages`;
+  const requestOptions = {
+    headers: { Authorization: `Bearer ${input.accessToken}`, "Content-Type": "application/json" },
+    timeout: 10000
+  };
+  const payload = { recipient: { id: input.recipientId }, message: { text: input.text } };
+  try {
+    return {
+      response: await axios.post(url, payload, requestOptions),
+      human_agent: false
+    };
+  } catch (error) {
+    if (!input.humanAgent || !instagramStandardWindowClosed(error)) throw error;
+    try {
+      return {
+        response: await axios.post(url, Object.assign({}, payload, { tag: "HUMAN_AGENT" }), requestOptions),
+        human_agent: true
+      };
+    } catch (humanAgentError) {
+      humanAgentError.nextforDeliveryFailure = {
+        error: "instagram_reply_window_closed",
+        status: 409,
+        message: "Instagram cerró esta conversación por inactividad. Pídele al cliente que envíe un nuevo mensaje por Instagram y podrás responder de inmediato."
+      };
+      throw humanAgentError;
+    }
+  }
+}
+
 async function sendText(to, text, options) {
   const recipient = parseChannelRecipient(to);
   let deliveryRuntime = options || cachedConversationRuntime(to, null);
@@ -4922,11 +5252,15 @@ async function sendText(to, text, options) {
       if (!accessToken || !sendId) throw new Error("Instagram messaging is not configured");
       const chunks = splitMetaMessageText(text, 950);
       for (const chunk of chunks) {
-        const response = await axios.post(
-          `${graphOrigin}/${META_GRAPH_VERSION}/${sendId}/messages`,
-          { recipient: { id: recipient.id }, message: { text: chunk } },
-          { headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" }, timeout: 10000 }
-        );
+        const delivery = await deliverInstagramTextChunk({
+          graphOrigin,
+          sendId,
+          recipientId: recipient.id,
+          accessToken,
+          text: chunk,
+          humanAgent: options && options.human_agent === true
+        });
+        const response = delivery.response;
         rememberManagedInstagramOutbound(
           chunk,
           response && response.data && (response.data.message_id || response.data.id)
@@ -4973,6 +5307,7 @@ async function sendText(to, text, options) {
     console.log(`Text sent to ${maskedIdentifier(to)} via ${runtime.source}`);
     return true;
   } catch (err) {
+    rememberDeliveryFailure(options, err && err.nextforDeliveryFailure || null);
     if (recipient.channel === "instagram") {
       const metaError = err.response?.data?.error || {};
       instagramRuntimeState.last_error_at = new Date().toISOString();
@@ -10367,6 +10702,20 @@ function customerNotificationActorId(auth) {
   return String(auth && (auth.email || auth.username || auth.user_id || auth.name) || "").trim().toLowerCase();
 }
 
+function customerNotificationEmailScope(auth) {
+  const actorId = customerNotificationActorId(auth);
+  if (!auth || auth.version !== 2 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(actorId)) {
+    const error = new Error("customer_notification_email_membership_required");
+    error.status = 403;
+    throw error;
+  }
+  return {
+    tenant_id: customerTenantForAuth(auth),
+    actor_id: actorId,
+    recipient: actorId
+  };
+}
+
 async function buildCustomerNotificationSnapshot(tenantId, auth, onboarding, questionnaire) {
   const base = buildNextforNotifications(onboarding, questionnaire);
   const handoffs = await customerNotificationService.list(tenantId, customerNotificationActorId(auth), 100);
@@ -10625,7 +10974,7 @@ async function createRetargetingJobForCustomer(tenantId, userId, eventType, sour
       back_in_stock: "back_in_stock_rav",
       recommendation: "product_recommendation_rav"
     };
-    return await retargetingEngine.createJob({
+    const result = await retargetingEngine.createJob({
       tenant_id: tenantId,
       customer_id: userId,
       channel: userId.startsWith("ig:") ? "instagram" : userId.startsWith("ms:") ? "messenger" : "whatsapp",
@@ -10638,6 +10987,41 @@ async function createRetargetingJobForCustomer(tenantId, userId, eventType, sour
       context: context || {},
       actor: "system"
     }, policy);
+    const job = result && result.job;
+    if (result && result.created === true && job && ["pending_approval", "simulation_pending"].includes(job.status)) {
+      const eventLabels = {
+        abandoned_cart: "Dejó una compra a medias y la conversación conserva el contexto para retomarla.",
+        post_purchase: "Ya compró antes y existe una oportunidad comprobable de seguimiento.",
+        back_in_stock: "El producto que buscaba volvió a estar disponible.",
+        recommendation: "La conversación muestra una oportunidad de recomendación relevante.",
+        high_intent: "La conversación muestra intención alta de compra."
+      };
+      try {
+        await customerNotificationEmailService.scheduleEvent({
+          tenant_id: tenantId,
+          notification_id: "retargeting:" + job.id,
+          template: "sales_opportunity",
+          payload: {
+            action_url: "/admin/panel?tab=retargeting",
+            opportunity: {
+              customer_name: job.context && job.context.preferred_name || "Cliente",
+              signal: eventLabels[job.event_type] || "La IA detectó una oportunidad en una conversación real.",
+              suggestion: "Revisa la conversación y decide si tu equipo debe retomarla.",
+              potential_value: job.context && job.context.amount_cop || 0,
+              currency: "COP"
+            }
+          }
+        });
+        setTimeout(processCustomerNotificationEmails, 0);
+      } catch (emailError) {
+        log("warn", "customer_notification_sales_opportunity_schedule_failed", {
+          tenant_id: tenantId,
+          job_id: job.id,
+          error: String(emailError && emailError.message || emailError || "unknown").slice(0, 180)
+        });
+      }
+    }
+    return result;
   } catch (error) {
     console.error("retargeting job error:", error.message);
     return { created: false, error: error.message };
@@ -11851,6 +12235,7 @@ function customerPanelCapabilities(role) {
     intervene: level >= DASHBOARD_ROLES.agent,
     respond: level >= DASHBOARD_ROLES.agent,
     manage_notes_tags: level >= DASHBOARD_ROLES.agent,
+    clear_conversations: level >= DASHBOARD_ROLES.agent,
     manage_orders: level >= DASHBOARD_ROLES.agent,
     run_tests: level >= DASHBOARD_ROLES.admin,
     run_evaluation: level >= DASHBOARD_ROLES.admin,
@@ -12960,6 +13345,20 @@ app.post("/admin/panel/billing/checkout", async (req, res) => {
       bot_id: business.assigned_bot_id,
       actor: auth.email || auth.username || "customer"
     });
+    const billing = await paymentService.tenantBilling(business.id).catch(function () { return null; });
+    await scheduleSetupEmail({
+      tenant_id: business.id,
+      to: auth.email || auth.username,
+      template: "payment_abandoned",
+      dedupe_key: setupEmailDedupeKey("payment_abandoned", business.id, checkout.reference),
+      send_after: new Date(Date.now() + SETUP_EMAIL_PAYMENT_DELAY_MINUTES * 60 * 1000).toISOString(),
+      payload: {
+        name: auth.name || business.name,
+        plan_name: billing && billing.plan_name || business.plan_id,
+        monthly_price: billing && billing.contracted_monthly_price,
+        payment_url: "https://nextforia.com/admin/panel?tab=plan"
+      }
+    });
     res.json({ ok: true, checkout });
   } catch (error) {
     sendPaymentError(res, error);
@@ -13236,6 +13635,17 @@ app.post("/admin/create-account", loginRateLimiter, async (req, res) => {
     }
     const redirect = await customerPanelEntryRedirect(user);
     setDashboardSessionCookie(req, res, user);
+    await scheduleSetupEmail({
+      tenant_id: user.tenant_id,
+      to: user.email,
+      template: "welcome",
+      dedupe_key: setupEmailDedupeKey("welcome", user.tenant_id, "account-created"),
+      payload: {
+        name: user.name || user.company_name,
+        company_name: user.company_name,
+        setup_url: "https://nextforia.com/admin/client-onboarding"
+      }
+    });
     res.status(201).json({
       ok: true,
       tenant: { id: user.tenant_id, company_name: user.company_name, plan_id: user.plan_id, assigned_bot_id: user.assigned_bot_id },
@@ -13318,6 +13728,17 @@ app.post("/admin/setup/:tenantId", async (req, res) => {
       }
       const redirect = await customerPanelEntryRedirect(user);
       setDashboardSessionCookie(req, res, user);
+      await scheduleSetupEmail({
+        tenant_id: user.tenant_id,
+        to: user.email,
+        template: "welcome",
+        dedupe_key: setupEmailDedupeKey("welcome", user.tenant_id, "account-created"),
+        payload: {
+          name: user.name || user.company_name,
+          company_name: user.company_name,
+          setup_url: "https://nextforia.com/admin/client-onboarding"
+        }
+      });
       res.status(201).json({
         ok: true,
         tenant: { id: user.tenant_id, company_name: user.company_name },
@@ -13461,6 +13882,41 @@ function releaseAdminConversation(req, res) {
 
 app.post("/admin/release/:userId", releaseAdminConversation);
 
+app.delete("/admin/panel/conversations/:userId", async (req, res) => {
+  if (!conversationActionAuthOk(req, "agent")) {
+    res.status(401).json({ ok: false, error: "unauthorized" });
+    return;
+  }
+  const userId = normalizeConversationUserId(req.params.userId);
+  if (!userId) {
+    res.status(400).json({ ok: false, error: "missing_user_id" });
+    return;
+  }
+  const auth = dashboardAuth(req);
+  const tenantId = customerTenantForAuth(auth) || DEFAULT_TENANT_ID;
+  try {
+    const cleared = await recordCustomerConversationClear(userId, tenantId, auth.email || auth.username || auth.name || "customer_panel");
+    const stateKey = tenantConversationStateKey(userId, tenantId);
+    conversations.delete(stateKey);
+    conversationLastActiveAt.delete(stateKey);
+    deleteHumanHandoff(userId, tenantId);
+    res.json({
+      ok: true,
+      userId,
+      cleared_at: cleared.cleared_at,
+      profile_preserved: true,
+      orders_preserved: true
+    });
+  } catch (error) {
+    log("error", "customer_conversation_clear_failed", {
+      tenant_id: tenantId,
+      user_id_suffix: userId.slice(-6),
+      error: String(error && error.message || error || "unknown").slice(0, 180)
+    });
+    res.status(503).json({ ok: false, error: "conversation_not_cleared" });
+  }
+});
+
 app.post("/admin/support/tenants/:tenantId/release-handoffs", async (req, res) => {
   const auth = dashboardAuth(req);
   if (!auth.ok || auth.role !== "super_admin") {
@@ -13547,7 +14003,11 @@ app.post("/admin/takeover/:userId", async (req, res) => {
 });
 
 async function executeAdminMessageDelivery(userId, text, tenantMeta, actor, clientRequestId) {
-  const sent = await sendText(userId, text, tenantMeta);
+  const deliveryResult = {};
+  const sent = await sendText(userId, text, Object.assign({}, tenantMeta, {
+    human_agent: true,
+    delivery_result: deliveryResult
+  }));
   if (!sent) {
     await recordAdminEvent(
       userId,
@@ -13558,11 +14018,11 @@ async function executeAdminMessageDelivery(userId, text, tenantMeta, actor, clie
       tenantMeta
     );
     return {
-      status: 502,
+      status: deliveryResult.status || 502,
       body: {
         ok: false,
-        error: "channel_delivery_failed",
-        message: "Meta rechazó el envío. Vuelve a conectar este canal antes de responder.",
+        error: deliveryResult.error || "channel_delivery_failed",
+        message: deliveryResult.message || "Meta rechazó el envío. Revisa la conexión de este canal antes de responder.",
         userId,
         handoff: hasHumanHandoff(userId, tenantMeta.tenant_id),
         meta_sent: false,
@@ -14647,10 +15107,37 @@ app.put("/admin/customer-setups/:tenantId", async (req, res) => {
     const tenant = await setupReviewTenant(req.params.tenantId);
     const questionnaire = await loadCustomerSetupQuestionnaire(false);
     const channels = tenant ? await setupReviewChannels(tenant.id).catch(function () { return []; }) : [];
+    const review = setupReviewSummary(record);
+    if (tenant && review.status === "testing") {
+      await scheduleSetupEmail({
+        tenant_id: tenant.id,
+        to: setupEmailRecipient(null, record, tenant),
+        template: "preparing",
+        dedupe_key: setupEmailDedupeKey("preparing", tenant.id, "testing"),
+        payload: {
+          name: setupEmailCustomerName(null, record, tenant),
+          plan_name: tenant.plan_name || tenant.plan_id,
+          panel_url: "https://nextforia.com/admin/panel"
+        }
+      });
+    }
+    if (tenant && review.status === "live") {
+      await scheduleSetupEmail({
+        tenant_id: tenant.id,
+        to: setupEmailRecipient(null, record, tenant),
+        template: "live",
+        dedupe_key: setupEmailDedupeKey("live", tenant.id, "first-live"),
+        payload: {
+          name: setupEmailCustomerName(null, record, tenant),
+          panel_url: "https://nextforia.com/admin/panel",
+          whatsapp_url: setupEmailWhatsAppUrl(record, tenant)
+        }
+      });
+    }
     res.json({
       ok: true,
       onboarding: record,
-      review: setupReviewSummary(record),
+      review,
       appointment_integrations: tenant ? await appointmentIntegrationsForRecord(record, tenant.id, channels) : null,
       launch: tenant ? await buildSetupLaunchReadiness(tenant, record, questionnaire, channels) : null
     });
@@ -14768,6 +15255,20 @@ app.put("/admin/client-onboarding/data", async (req, res) => {
       }
     }
     const record = await persistClientOnboarding(candidate.answers, requestedStatus, auth, tenantId);
+    if (requestedStatus === "draft" && record.completion > 0) {
+      const reminderDay = new Date().toISOString().slice(0, 10);
+      await scheduleSetupEmail({
+        tenant_id: tenantId,
+        to: setupEmailRecipient(auth, record),
+        template: "training_incomplete",
+        dedupe_key: setupEmailDedupeKey("training_incomplete", tenantId, reminderDay),
+        send_after: new Date(Date.now() + SETUP_EMAIL_INCOMPLETE_DELAY_MINUTES * 60 * 1000).toISOString(),
+        payload: {
+          name: setupEmailCustomerName(auth, record),
+          setup_url: "https://nextforia.com/admin/client-onboarding"
+        }
+      });
+    }
     if (requestedStatus === "completed" && paymentChoice === "pay") {
       const business = customerBusinessForOnboarding(auth, tenantId, candidate.answers);
       checkout = await paymentService.startCheckout({
@@ -14777,6 +15278,19 @@ app.put("/admin/client-onboarding/data", async (req, res) => {
         plan_id: selectedPlanId,
         bot_id: selectedBotId,
         actor: auth.email || auth.username || "customer"
+      });
+      await scheduleSetupEmail({
+        tenant_id: tenantId,
+        to: setupEmailRecipient(auth, record),
+        template: "payment_abandoned",
+        dedupe_key: setupEmailDedupeKey("payment_abandoned", tenantId, checkout.reference),
+        send_after: new Date(Date.now() + SETUP_EMAIL_PAYMENT_DELAY_MINUTES * 60 * 1000).toISOString(),
+        payload: {
+          name: setupEmailCustomerName(auth, record),
+          plan_name: billing && billing.plan_name || selectedPlanId,
+          monthly_price: billing && billing.contracted_monthly_price,
+          payment_url: "https://nextforia.com/admin/panel?tab=plan"
+        }
       });
     }
     res.json({
@@ -16464,10 +16978,56 @@ app.post("/admin/appointment-calendar-connections/:tenantId/disconnect", async (
   }
 });
 
+// Manifest de la PWA. Detras de la bandera y de la sesion del panel: es la
+// misma app, no una nueva. start_url apunta al panel autenticado, asi que abrir
+// el icono continua la sesion existente (la cookie viaja igual).
+app.get("/admin/panel/manifest.webmanifest", (req, res) => {
+  const demoPreview = req.query.pwa === "demo";
+  if (!PWA_V1_ENABLED && !demoPreview) {
+    res.status(404).json({ ok: false, error: "pwa_disabled" });
+    return;
+  }
+  res.setHeader("content-type", "application/manifest+json; charset=utf-8");
+  res.setHeader("cache-control", "public, max-age=3600");
+  res.json({
+    name: "Nextfor IA",
+    short_name: "Nextfor",
+    description: "Atiende a tus clientes y no pierdas ninguna conversación.",
+    id: demoPreview ? "/admin/panel-demo" : "/admin/panel",
+    start_url: demoPreview
+      ? "/admin/panel-demo?tab=summary&pwa=1&source=pwa"
+      : "/admin/panel?tab=summary&source=pwa",
+    scope: "/admin/",
+    display: "standalone",
+    orientation: "portrait",
+    background_color: "#0A1836",
+    theme_color: "#0A1836",
+    lang: "es",
+    dir: "ltr",
+    categories: ["business", "productivity"],
+    icons: [
+      { src: "/admin/assets/pwa-icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/admin/assets/pwa-icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/admin/assets/pwa-icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" }
+    ],
+    shortcuts: [
+      { name: "Conversaciones", url: "/admin/panel?tab=conversations&source=pwa" },
+      { name: "Notificaciones", url: "/admin/panel?tab=notifications&source=pwa" }
+    ]
+  });
+});
+
 app.get("/admin/customer-notification-sw.js", (req, res) => {
+  const pwaWorkerEnabled = PWA_V1_ENABLED || req.query.pwa === "1";
   res.setHeader("content-type", "application/javascript; charset=utf-8");
   res.setHeader("cache-control", "no-cache, no-store, must-revalidate");
   res.send(`"use strict";
+// El panel avisa de una version nueva y espera a que el usuario acepte antes de
+// activarla: recargar debajo de alguien que escribe una respuesta es peor que
+// esperar. skipWaiting solo corre cuando el cliente toca "Actualizar".
+self.addEventListener("message", function (event) {
+  if (event.data && event.data.type === "NEXTFOR_APPLY_UPDATE") self.skipWaiting();
+});
 self.addEventListener("push", function (event) {
   var payload = {};
   try { payload = event.data ? event.data.json() : {}; } catch (_) {}
@@ -16495,7 +17055,29 @@ self.addEventListener("notificationclick", function (event) {
     }
     return clients.openWindow(action);
   }));
-});`);
+});
+${pwaWorkerEnabled ? `
+// Offline minimo y seguro. El HTML autenticado no se guarda en Cache Storage:
+// un dispositivo compartido no puede reutilizar el nombre o la configuracion
+// de un tenant anterior. Las APIs tampoco se cachean.
+self.addEventListener("activate", function (event) {
+  event.waitUntil(self.clients.claim());
+});
+self.addEventListener("fetch", function (event) {
+  var request = event.request;
+  if (request.method !== "GET") return;
+  var url = new URL(request.url);
+  if (url.origin !== self.location.origin) return;
+  var isPanelShell = request.mode === "navigate" &&
+    (url.pathname === "/admin/panel" || url.pathname === "/admin/panel-demo");
+  if (!isPanelShell) return;
+  event.respondWith(
+    fetch(request).catch(function () {
+      return new Response("<!doctype html><html lang=\"es\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"theme-color\" content=\"#0A1836\"><title>Nextfor sin conexión</title><body style=\"margin:0;min-height:100vh;display:grid;place-items:center;background:#f4f7fb;color:#0a1836;font:16px system-ui,sans-serif\"><main style=\"max-width:360px;padding:32px;text-align:center\"><img src=\"/admin/assets/pwa-icon-192.png\" alt=\"\" width=\"72\" height=\"72\" style=\"border-radius:18px\"><h1 style=\"font-size:24px\">Estás sin conexión</h1><p style=\"line-height:1.5;color:#63728a\">Cuando vuelva la señal, abre Nextfor de nuevo para cargar la información más reciente.</p></main></body></html>",
+        { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }, status: 503 });
+    })
+  );
+});` : ""}`);
 });
 
 if (process.env.NODE_ENV === "test") {
@@ -16572,6 +17154,76 @@ app.get("/admin/panel/notifications", async (req, res) => {
     res.status(503).json({ ok: false, error: "notification_store_unavailable" });
   }
 });
+
+app.get("/admin/panel/notifications/email-preferences", async (req, res) => {
+  if (!customerPanelAuthOk(req, "viewer")) {
+    res.status(401).json({ ok: false, error: "unauthorized" });
+    return;
+  }
+  try {
+    const preferences = await customerNotificationEmailService.getPreferences(
+      customerNotificationEmailScope(dashboardAuth(req))
+    );
+    res.json({ ok: true, preferences });
+  } catch (error) {
+    res.status(error && error.status || 503).json({
+      ok: false,
+      error: error && error.message || "customer_notification_email_preferences_unavailable"
+    });
+  }
+});
+
+app.put("/admin/panel/notifications/email-preferences", async (req, res) => {
+  if (!customerPanelAuthOk(req, "viewer")) {
+    res.status(401).json({ ok: false, error: "unauthorized" });
+    return;
+  }
+  const input = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
+  const allowed = ["enabled", "types"];
+  const typeKeys = ["payment_pending", "shipping_pending", "sales_opportunity", "product_update", "human_attention"];
+  if (Object.keys(input).some(function (key) { return !allowed.includes(key); }) ||
+      typeof input.enabled !== "boolean" || !input.types || typeof input.types !== "object" || Array.isArray(input.types) ||
+      Object.keys(input.types).some(function (key) { return !typeKeys.includes(key) || typeof input.types[key] !== "boolean"; })) {
+    res.status(400).json({ ok: false, error: "customer_notification_email_preferences_invalid" });
+    return;
+  }
+  try {
+    const preferences = await customerNotificationEmailService.savePreferences(
+      customerNotificationEmailScope(dashboardAuth(req)),
+      input
+    );
+    res.json({ ok: true, preferences });
+  } catch (error) {
+    const unavailable = error && error.message === "customer_notification_email_unavailable";
+    res.status(error && error.status || (unavailable ? 503 : 403)).json({
+      ok: false,
+      error: error && error.message || "customer_notification_email_preferences_unavailable"
+    });
+  }
+});
+
+if (CUSTOMER_NOTIFICATION_EMAIL_TEST_MODE) {
+  app.get("/admin/test/customer-notification-email-outbox", function (req, res) {
+    if (!customerPanelAuthOk(req, "viewer")) {
+      res.status(401).json({ ok: false, error: "unauthorized" });
+      return;
+    }
+    const auth = dashboardAuth(req);
+    let scope;
+    try { scope = customerNotificationEmailScope(auth); }
+    catch (error) {
+      res.status(403).json({ ok: false, error: error.message });
+      return;
+    }
+    const items = customerNotificationEmailTestOutbox.filter(function (message) {
+      return cleanTenantId(message.tenant_id) === cleanTenantId(scope.tenant_id) &&
+        String(message.to || "").trim().toLowerCase() === scope.actor_id;
+    }).map(function (message) {
+      return { tenant_id: message.tenant_id, to: message.to, template: message.template };
+    });
+    res.json({ ok: true, count: items.length, items });
+  });
+}
 
 app.post("/admin/panel/notifications/:notificationId/read", async (req, res) => {
   if (!customerPanelAuthOk(req, "viewer")) {
@@ -16700,6 +17352,16 @@ app.get("/admin/panel/data", async (req, res) => {
       turns = pageRows.concat(before ? [] : contextRows).map(normalizeTurnRow);
     }
   }
+  let conversationClearTurns = turns.filter(isCustomerConversationClearTurn);
+  try {
+    conversationClearTurns = conversationClearTurns.concat(await loadCustomerConversationClearTurns(tenantId));
+  } catch (error) {
+    log("warn", "customer_conversation_clear_state_unavailable", {
+      tenant_id: tenantId,
+      error: String(error && error.message || error || "unknown").slice(0, 180)
+    });
+  }
+  turns = filterClearedCustomerConversationTurns(turns, conversationClearTurns, tenantId);
   turns.sort(function (a, b) {
     return new Date(b.ts || 0) - new Date(a.ts || 0);
   });
@@ -16853,6 +17515,52 @@ app.get("/admin/panel/orders-data", async (req, res) => {
   }
 });
 
+// Reporte de bug del bot hecho por el cliente desde Conversaciones.
+// El tenant sale SIEMPRE de la sesion firmada, nunca del body: si viniera del
+// navegador, un cliente podria abrir incidencias a nombre de otro.
+app.post("/admin/panel/bug-reports", async (req, res) => {
+  if (!customerPanelAuthOk(req, "agent")) {
+    res.status(401).json({ ok: false, error: "unauthorized" });
+    return;
+  }
+  if (!botOpsService) {
+    res.status(503).json({ ok: false, error: "bot_ops_unavailable", message: "No pudimos registrar el reporte. Intenta de nuevo en unos minutos." });
+    return;
+  }
+  const auth = dashboardAuth(req);
+  const tenantId = customerTenantForAuth(auth);
+  const body = req.body || {};
+  const reason = String(body.reason || "otro").trim().toLowerCase();
+  const note = String(body.note || "").trim().slice(0, 1000);
+  const allowedReasons = ["respuesta_incorrecta", "no_entendio", "no_respondio", "tono", "otro"];
+  if (!allowedReasons.includes(reason)) {
+    res.status(400).json({ ok: false, error: "invalid_reason", message: "Elige qué fue lo que pasó." });
+    return;
+  }
+  try {
+    const result = await botOpsService.reportIssue({
+      tenant_id: tenantId,
+      bot_id: String(body.bot_id || auth.assigned_bot_id || "").trim().toLowerCase(),
+      channel: String(body.channel || "").trim().toLowerCase(),
+      conversation_key: String(body.conversation_id || "").trim().slice(0, 80),
+      reason,
+      note,
+      reported_by: auth.email || auth.username || auth.name || "customer_panel",
+      bot_version: BOT_VERSION,
+      customer_message: body.customer_message,
+      bot_reply: body.bot_reply
+    });
+    if (!result.ok) {
+      res.status(503).json({ ok: false, error: "report_not_stored", message: "No pudimos registrar el reporte. Intenta de nuevo en unos minutos." });
+      return;
+    }
+    res.json({ ok: true, finding_recorded: result.finding_recorded });
+  } catch (error) {
+    console.error("customer bug report error:", error.message);
+    res.status(503).json({ ok: false, error: "report_failed", message: "No pudimos registrar el reporte. Intenta de nuevo en unos minutos." });
+  }
+});
+
 app.post("/admin/panel/orders/action", async (req, res) => {
   if (!customerPanelAuthOk(req, "agent")) {
     res.status(401).json({ ok: false, error: "unauthorized" });
@@ -16876,6 +17584,32 @@ app.post("/admin/panel/orders/action", async (req, res) => {
       { tracking_number: body.tracking_number, tracking_url: body.tracking_url, shipping: body.shipping },
       auth.email || auth.username || auth.name || "customer_panel"
     );
+    if (body.action === "confirm_payment") {
+      try {
+        await customerNotificationEmailService.scheduleEvent({
+          tenant_id: tenantId,
+          notification_id: "shipping-pending:" + order.id + ":" + order.revision,
+          template: "shipping_pending",
+          send_after: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          payload: {
+            action_url: "/admin/panel?tab=orders&order=" + encodeURIComponent(order.id),
+            orders: [{
+              id: order.id,
+              order_number: order.order_number,
+              name: order.name,
+              item_count: (order.items || []).reduce(function (total, item) { return total + (Number(item.qty) || 1); }, 0),
+              wait_days: 1
+            }]
+          }
+        });
+      } catch (emailError) {
+        log("warn", "customer_notification_shipping_schedule_failed", {
+          tenant_id: tenantId,
+          order_id: order.id,
+          error: String(emailError && emailError.message || emailError || "unknown").slice(0, 180)
+        });
+      }
+    }
     let panelOrder = order;
     try {
       const profile = await loadCustomerMeta(order.conversation_id, tenantId);
@@ -17925,6 +18659,7 @@ app.get("/admin/panel", async (req, res) => {
     ordersPath: "/admin/panel/orders-data",
     setupPath: auth.version === 2 ? null : undefined,
     healthPath: auth.version === 2 ? null : undefined,
+    pwaEnabled: PWA_V1_ENABLED,
     botVersion: BOT_VERSION
   });
 });
@@ -17989,6 +18724,11 @@ app.get("/admin/panel-demo", (req, res) => {
         }
       ]
     },
+    // La PWA en el demo es opt-in por query (?pwa=1): permite probar instalacion,
+    // iconos, standalone y offline SIN credenciales, sin cambiar el demo para
+    // nadie que no ponga el parametro. La bandera global sigue mandando en el
+    // panel autenticado real.
+    pwaEnabled: PWA_V1_ENABLED || req.query.pwa === "1",
     botVersion: BOT_VERSION
   });
 });
@@ -18794,6 +19534,9 @@ app.get("/admin/health", async (req, res) => {
           String(process.env.NEXFORIA_PAIRING_SECRET || "").trim().length >= 32 &&
           NEXFORIA_COMMERCE_SERVICE_SECRET.length >= 32
         )
+      },
+      notifications: {
+        web_push_ready: WEB_PUSH_CONFIGURED
       },
       status: "running"
     });

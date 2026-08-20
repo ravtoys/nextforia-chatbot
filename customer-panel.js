@@ -108,6 +108,13 @@ module.exports = function renderCustomerPanel(res, options) {
   // non-tenant panel untouched.
   const panelRedesignEnabled = (demoMode || (panelContext.v2 && panelContext.support)) && panelRedesignFlag !== "0";
   const botVersion = options.botVersion || "dev";
+  // Todo lo de la PWA (manifest, iconos, instalacion, offline) va detras de una
+  // sola bandera. Apagada, el panel renderiza exactamente el mismo HTML que
+  // antes: es la valvula de escape si algo sale mal en produccion.
+  const pwaEnabled = !!options.pwaEnabled;
+  const pwaManifestPath = demoMode
+    ? "/admin/panel/manifest.webmanifest?pwa=demo"
+    : "/admin/panel/manifest.webmanifest?pwa=1";
   const paymentGateRequired = !!options.paymentGateRequired;
   const channelConnectionsV1Enabled = !!options.channelConnectionsV1Enabled && !paymentGateRequired;
   const channelConnectionsDemo = options.channelConnectionsDemo || null;
@@ -257,8 +264,17 @@ module.exports = function renderCustomerPanel(res, options) {
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1${pwaEnabled ? ", viewport-fit=cover" : ""}">
 <title>Nextfor IA · ${escapeHtml(panelContext.businessName)}</title>
+${pwaEnabled ? `<link rel="manifest" href="${pwaManifestPath}">
+<meta name="theme-color" content="#0A1836">
+<meta name="application-name" content="Nextfor IA">
+<!-- iOS ignora el manifest para el icono y el modo standalone: necesita estas
+     tres etiquetas propias, y el icono tiene que ser PNG cuadrado. -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Nextfor">
+<link rel="apple-touch-icon" href="/admin/assets/pwa-icon-apple-180.png">` : ""}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
@@ -333,7 +349,7 @@ button{cursor:pointer}
 .footTitle{padding-bottom:4px}
 .sidebarFoot .whatsappCard{margin-top:10px}
 .panelVersion{margin-top:8px;color:rgba(221,232,248,.54);font-size:10.5px;font-weight:850;letter-spacing:.08em;text-transform:uppercase;text-align:center}
-.panelVersionFixed{position:fixed;right:18px;bottom:10px;z-index:30;border:1px solid rgba(220,229,241,.8);border-radius:999px;background:rgba(255,255,255,.86);backdrop-filter:blur(10px);color:#74839C;font-size:10px;font-weight:850;letter-spacing:.05em;padding:6px 10px;box-shadow:0 8px 18px rgba(8,22,52,.08)}
+
 .panelActionToast{position:fixed;left:50%;bottom:30px;z-index:2200;max-width:min(520px,calc(100vw - 32px));transform:translateX(-50%);border-radius:14px;background:#0B2348;color:#fff;padding:13px 18px;font-size:12.5px;font-weight:800;line-height:1.45;text-align:center;box-shadow:0 18px 46px rgba(6,15,34,.24);animation:nxPanelToastRise .25s var(--ease-out)}
 .panelActionToast.error{background:#9F2F1B}.panelActionToast[hidden]{display:none}@keyframes nxPanelToastRise{from{opacity:0;transform:translate(-50%,12px)}to{opacity:1;transform:translate(-50%,0)}}
 .botsActive{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;color:#9DF0C8;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,.08)}
@@ -421,9 +437,11 @@ button{cursor:pointer}
 .pendingQuestionList{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 .pendingQuestionList span{border:1px solid #DCE7F3;background:#F7FAFD;border-radius:999px;padding:7px 10px;color:#63728A;font-size:11.5px;font-weight:900}
 .notificationEmpty{background:#fff;border:1px solid var(--line);border-radius:20px;padding:24px;color:var(--slate-500);font-weight:800;box-shadow:var(--shadow)}
-.notificationControls{display:flex;align-items:center;justify-content:space-between;gap:14px;border:1px solid #CBEAFF;background:#F4FBFF;border-radius:18px;padding:14px 16px;color:var(--navy-900)}
-.notificationControls strong{display:block;font-size:14px}.notificationControls span{display:block;margin-top:3px;color:var(--slate-500);font-size:12px;font-weight:700}
-.handoffToast{position:fixed;right:24px;top:24px;z-index:90;width:min(420px,calc(100vw - 32px));border:1px solid #F3D290;border-radius:20px;background:#FFF9ED;box-shadow:0 24px 60px rgba(7,22,50,.24);padding:18px;display:none;grid-template-columns:46px minmax(0,1fr) auto;gap:13px;align-items:center;color:var(--navy-900)}
+.notificationControls{display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:14px;border:1px solid #BFE8FC;background:linear-gradient(135deg,#F7FCFF,#EDF9FF);border-radius:18px;padding:15px 16px;color:var(--navy-900)}
+.notificationControlsIcon,.notificationEmailIcon{width:44px;height:44px;border-radius:14px;background:linear-gradient(135deg,var(--cyan-400),var(--cyan-500));color:#fff;display:grid;place-items:center;box-shadow:0 9px 22px rgba(18,168,244,.2)}.notificationControlsIcon svg,.notificationEmailIcon svg{width:22px;height:22px}.notificationControls small,.notificationEmailEyebrow{display:block;margin-bottom:3px;color:#0788C8;font-size:10px;font-weight:950;letter-spacing:.1em;text-transform:uppercase}.notificationControls strong{display:block;font-size:14px}.notificationControls span{display:block;margin-top:3px;color:var(--slate-500);font-size:12px;font-weight:700}.notificationControls .primaryBtn{min-width:158px}
+.notificationEmailSettings{display:grid;gap:18px;border:1px solid #D9E5F1;background:linear-gradient(180deg,#fff,#FBFDFF);border-radius:22px;padding:22px;color:var(--navy-900);box-shadow:var(--shadow-soft);overflow:hidden}.notificationEmailSettings[hidden]{display:none}.notificationEmailIntro{display:grid;grid-template-columns:48px minmax(0,1fr) auto;align-items:center;gap:14px}.notificationEmailIcon{width:48px;height:48px;border-radius:15px}.notificationEmailHeadCopy{min-width:0}.notificationEmailHeadCopy>strong{display:block;font-size:17px;line-height:1.2}.notificationEmailHeadCopy>span{display:block;margin-top:5px;color:var(--slate-500);font-size:12.5px;line-height:1.45;font-weight:700}.notificationEmailSwitch{position:relative;display:grid;grid-template-columns:42px minmax(0,1fr);align-items:center;gap:10px;min-width:174px;padding:9px 11px;border:1px solid #DCE6F0;border-radius:14px;background:#F7FAFD;cursor:pointer}.notificationEmailSwitch input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}.notificationEmailSwitchTrack{position:relative;width:42px;height:24px;border-radius:999px;background:#CBD5E1;transition:background .18s ease;box-shadow:inset 0 0 0 1px rgba(15,23,42,.06)}.notificationEmailSwitchTrack:after{content:"";position:absolute;left:3px;top:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 2px 6px rgba(8,22,52,.2);transition:transform .18s ease}.notificationEmailSwitch input:checked+.notificationEmailSwitchTrack{background:var(--cyan-500)}.notificationEmailSwitch input:checked+.notificationEmailSwitchTrack:after{transform:translateX(18px)}.notificationEmailSwitch input:focus-visible+.notificationEmailSwitchTrack{outline:3px solid rgba(18,168,244,.22);outline-offset:3px}.notificationEmailSwitchCopy{min-width:0}.notificationEmailSwitchCopy strong{display:block;font-size:11.5px;font-weight:950;white-space:nowrap}.notificationEmailSwitchCopy small{display:block;margin-top:2px;color:var(--slate-500);font-size:10.5px;font-weight:800}.notificationEmailRecipient{display:grid;grid-template-columns:34px minmax(0,1fr);align-items:center;gap:10px;padding:10px 12px;border:1px solid #DDE6F1;border-radius:14px;background:#F7FAFD;color:var(--slate-500)}.notificationEmailRecipientIcon{width:34px;height:34px;border-radius:10px;background:#E6F6FF;color:#0788C8;display:grid;place-items:center}.notificationEmailRecipientIcon svg{width:17px;height:17px}.notificationEmailRecipient small{display:block;font-size:10.5px;font-weight:800}.notificationEmailRecipient strong{display:block;margin-top:2px;min-width:0;color:var(--navy-900);font-size:12px;overflow-wrap:anywhere}.notificationEmailChoices{min-width:0;margin:0;padding:0;border:0}.notificationEmailChoices legend{margin-bottom:10px;color:var(--navy-900);font-size:12px;font-weight:950}.notificationEmailTypes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.notificationEmailType{position:relative;display:grid;grid-template-columns:22px minmax(0,1fr);align-items:center;justify-content:start;gap:10px;min-width:0;min-height:62px;padding:10px 12px;border:1px solid #E1E8F1;border-radius:14px;background:#fff;cursor:pointer;box-sizing:border-box;transition:border-color .16s ease,background .16s ease,box-shadow .16s ease}.notificationEmailType:hover{border-color:#A9DFF8;background:#F8FCFF}.notificationEmailType:has(input:checked){border-color:#B7E7FC;background:#F2FBFF}.notificationEmailType input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}.notificationEmailTypeCheck{position:relative;width:22px;height:22px;border:2px solid #B5C1D0;border-radius:7px;background:#fff;box-sizing:border-box}.notificationEmailTypeCheck:after{content:"";position:absolute;left:6px;top:2px;width:6px;height:11px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg) scale(0);transition:transform .12s ease}.notificationEmailType input:checked+.notificationEmailTypeCheck{border-color:var(--cyan-500);background:var(--cyan-500)}.notificationEmailType input:checked+.notificationEmailTypeCheck:after{transform:rotate(45deg) scale(1)}.notificationEmailType input:focus-visible+.notificationEmailTypeCheck{outline:3px solid rgba(18,168,244,.2);outline-offset:3px}.notificationEmailTypeCopy{min-width:0}.notificationEmailTypeCopy strong{display:block;color:var(--navy-900);font-size:12px;font-weight:950;line-height:1.25;overflow-wrap:anywhere}.notificationEmailTypeCopy small{display:block;margin-top:3px;color:var(--slate-500);font-size:10.5px;font-weight:700;line-height:1.35;overflow-wrap:anywhere}.notificationEmailActions{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:2px}.notificationEmailStatus{min-width:0;font-size:11.5px;line-height:1.4;color:var(--slate-500);font-weight:750}.notificationEmailActions .primaryBtn{min-width:174px}
+.notificationEmailToggle{display:grid;grid-template-columns:48px minmax(0,1fr) auto 20px;align-items:center;gap:14px;width:100%;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}.notificationEmailToggle:focus-visible{outline:3px solid rgba(18,168,244,.2);outline-offset:6px;border-radius:13px}.notificationEmailSummaryState{display:grid;justify-items:end;gap:4px}.notificationEmailSummaryState strong{padding:6px 10px;border-radius:999px;background:#EEF2F6;color:var(--slate-500);font-size:10.5px;font-weight:950;white-space:nowrap}.notificationEmailSettings.email-active .notificationEmailSummaryState strong{background:#E8F8F0;color:#168657}.notificationEmailSummaryState small{color:#0788C8;font-size:10.5px;font-weight:900}.notificationEmailChevron{width:18px;height:18px;fill:none;stroke:#718096;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;transition:transform .18s ease}.notificationEmailSettings.expanded .notificationEmailChevron{transform:rotate(180deg)}.notificationEmailDetails{display:grid;gap:18px;padding-top:18px;border-top:1px solid #E7EDF4}.notificationEmailDetails[hidden]{display:none}.notificationEmailDetailsTop{display:grid;grid-template-columns:minmax(180px,auto) minmax(0,1fr);align-items:stretch;gap:12px}
+.reportBugRow{display:flex;justify-content:flex-end;padding:2px 2px 0}.reportBugTrigger{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:#fff;color:var(--slate-500);font-family:inherit;font-size:12px;font-weight:700;border-radius:999px;padding:7px 13px;cursor:pointer;transition:color .16s,border-color .16s,background .16s}.reportBugTrigger:hover{color:#9A6B12;border-color:#F3D290;background:#FFFBF2}.reportBugFlag{font-size:12px;line-height:1}.bugModal{position:fixed;inset:0;z-index:120;background:rgba(7,22,50,.52);display:flex;align-items:center;justify-content:center;padding:20px}.bugModal[hidden]{display:none}.bugModalCard{position:relative;width:min(520px,100%);max-height:92vh;overflow-y:auto;background:#fff;border-radius:22px;box-shadow:0 30px 70px rgba(7,22,50,.32);padding:26px 26px 20px}.bugModalClose{position:absolute;right:14px;top:12px;border:0;background:transparent;color:var(--slate-500);font-size:22px;line-height:1;cursor:pointer;padding:4px 8px}.bugModalEyebrow{display:block;color:var(--cyan-500);font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.13em}.bugModalCard h3{font-family:var(--font-display);font-size:21px;line-height:1.18;color:var(--navy-900);margin:9px 0 0;max-width:24ch}.bugModalLead{margin:9px 0 0;font-size:13.5px;line-height:1.5;color:var(--slate-500)}.bugReasons{display:flex;flex-wrap:wrap;gap:8px;margin:17px 0 0}.bugReason{border:1px solid var(--line);background:#fff;color:var(--navy-900);font-family:inherit;font-size:12.5px;font-weight:700;border-radius:999px;padding:8px 13px;cursor:pointer;transition:all .16s}.bugReason:hover{border-color:var(--cyan-500)}.bugReason.active{background:#E8F6FF;border-color:var(--cyan-500);color:#0672A8}.bugNoteLabel{display:block;margin:18px 0 6px;font-size:12.5px;font-weight:800;color:var(--navy-900)}.bugNoteLabel span{color:var(--slate-500);font-weight:600}#bugNote{width:100%;min-height:86px;resize:vertical;font-family:inherit;font-size:13.5px;color:var(--navy-900);border:1px solid var(--line);border-radius:14px;padding:11px 13px;outline:none;box-sizing:border-box}#bugNote:focus{border-color:var(--cyan-500)}.bugModalError{margin:11px 0 0;font-size:12.5px;font-weight:700;color:#C0392B}.bugModalActions{display:flex;justify-content:flex-end;gap:9px;margin:18px 0 0}.bugModalGhost{border:1px solid var(--line);background:#fff;color:var(--slate-500);font-family:inherit;font-size:13px;font-weight:700;border-radius:12px;padding:10px 15px;cursor:pointer}.bugModalSend{border:0;background:var(--cyan-500);color:#fff;font-family:inherit;font-size:13px;font-weight:800;border-radius:12px;padding:10px 18px;cursor:pointer}.bugModalSend[disabled]{opacity:.6;cursor:default}.bugModalFoot{margin:14px 0 0;font-size:11.5px;line-height:1.45;color:var(--slate-500);text-align:center}@media(max-width:760px){.bugModalCard{padding:22px 18px 16px;border-radius:18px}.bugModalCard h3{font-size:19px}}@keyframes nxToastPulse{0%,100%{transform:scale(1);box-shadow:0 24px 60px rgba(7,22,50,.24)}50%{transform:scale(1.035);box-shadow:0 26px 68px rgba(245,165,36,.42)}}.handoffToast.show{animation:nxToastPulse .62s ease-in-out 3}.pwaInstall{position:fixed;left:50%;bottom:18px;z-index:2400;transform:translateX(-50%);width:min(460px,calc(100vw - 24px));display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:12px;padding:14px 16px;border:1px solid var(--line);border-radius:18px;background:#fff;box-shadow:0 22px 54px rgba(7,22,50,.26)}.pwaInstall[hidden]{display:none}.pwaInstallIcon{width:44px;height:44px;border-radius:11px}.pwaInstallCopy strong{display:block;font-family:var(--font-display);font-size:14.5px;color:var(--navy-900)}.pwaInstallCopy p{margin:3px 0 0;font-size:12px;line-height:1.4;color:var(--slate-500)}.pwaInstallCta{flex:none;border:0;border-radius:12px;background:var(--cyan-500);color:#fff;font-family:inherit;font-size:13px;font-weight:800;padding:10px 16px;cursor:pointer}.pwaInstallClose{position:absolute;right:8px;top:6px;border:0;background:transparent;color:var(--slate-500);font-size:18px;line-height:1;cursor:pointer;padding:2px 6px}.pwaInstall.ios{grid-template-columns:44px minmax(0,1fr)}.pwaInstall.ios .pwaInstallCta{display:none}.pwaOffline{position:fixed;left:0;right:0;top:0;z-index:2500;padding:9px 14px;background:#9A6B12;color:#fff;font-size:12.5px;font-weight:800;text-align:center}.pwaOffline[hidden]{display:none}.pwaUpdate{position:fixed;left:50%;bottom:18px;z-index:2400;transform:translateX(-50%);display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:14px;background:#0B2348;color:#fff;font-size:12.5px;font-weight:800;box-shadow:0 18px 46px rgba(6,15,34,.24)}.pwaUpdate[hidden]{display:none}.pwaUpdate button{border:0;border-radius:10px;background:var(--cyan-500);color:#fff;font-family:inherit;font-size:12.5px;font-weight:800;padding:7px 13px;cursor:pointer}@media(display-mode:standalone){.pwaInstall{display:none!important}}.handoffToast{position:fixed;right:24px;top:24px;z-index:90;width:min(420px,calc(100vw - 32px));border:1px solid #F3D290;border-radius:20px;background:#FFF9ED;box-shadow:0 24px 60px rgba(7,22,50,.24);padding:18px;display:none;grid-template-columns:46px minmax(0,1fr) auto;gap:13px;align-items:center;color:var(--navy-900)}
 .handoffToast.show{display:grid;animation:handoffIn .24s ease-out}.handoffToastIcon{width:46px;height:46px;border-radius:15px;background:#F7A928;color:#fff;display:grid;place-items:center;font-size:23px}.handoffToast strong{display:block;font-size:15px;font-weight:950}.handoffToast p{margin-top:3px;color:#6B7280;font-size:12.5px;line-height:1.4;font-weight:700}.handoffToast button{border:0;border-radius:12px;background:var(--navy-900);color:#fff;padding:11px 13px;font-weight:900;cursor:pointer}
 @keyframes handoffIn{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:none}}
 .metricRow{grid-column:1/-1;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:16px}
@@ -700,6 +718,16 @@ input:focus,textarea:focus{outline:3px solid rgba(18,168,244,.16);border-color:v
 .channelConnectCopy p{font-size:12.5px;color:var(--slate-500);line-height:1.5;margin-top:4px}
 .channelAccount{font-size:11.5px;color:var(--slate-700);font-weight:850;margin-top:7px}
 .channelConnectActions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;max-width:330px}
+.whatsappLaunchBox{flex:1 1 100%;width:100%;box-sizing:border-box;margin-top:6px;padding:14px;border:1px solid #DFE6F0;border-radius:16px;background:#F7FAFF;text-align:left;display:flex;flex-direction:column;gap:8px}
+.whatsappLaunchBox.ready{border-color:#1EBB72;background:#F1FCF6}
+.whatsappLaunchBox.warn{border-color:#F0B429;background:#FFF9EC}
+.whatsappLaunchStep{margin:0;font-size:11px;font-weight:850;letter-spacing:.04em;text-transform:uppercase;color:#71809A}
+.whatsappLaunchTitle{margin:0;font-size:15px;font-weight:800;color:#0B1D3A;line-height:1.3}
+.whatsappLaunchHint{margin:0;font-size:13px;line-height:1.45;color:#4A5B75}
+.whatsappLaunchBox .primaryBtn,.whatsappLaunchBox .ghostBtn{width:100%;max-width:none;flex:none}
+.whatsappLaunchBtn{min-height:52px;font-size:16px}
+.whatsappLaunchSpinner{display:inline-block;width:14px;height:14px;margin-right:8px;vertical-align:-2px;border:2px solid #C6D4E8;border-top-color:#0587CC;border-radius:50%;animation:whatsappLaunchSpin .8s linear infinite}
+@keyframes whatsappLaunchSpin{to{transform:rotate(360deg)}}
 .channelState{display:inline-flex;align-items:center;border-radius:999px;padding:6px 10px;font-size:10.5px;font-weight:950;background:var(--slate-100);color:var(--slate-700)}
 .channelState.connected{background:var(--green-100);color:#087E50}.channelState.connecting{background:var(--cyan-100);color:#057BB6}.channelState.needs_attention{background:var(--amber-100);color:#9C650C}.channelState.disconnected{background:#FDECEC;color:#B73535}
 .channelAssetSelect{height:40px;max-width:260px;border:1px solid var(--line);border-radius:10px;background:#fff;padding:0 10px;font:750 11.5px var(--font-body);color:var(--navy-900)}
@@ -742,8 +770,8 @@ input:focus,textarea:focus{outline:3px solid rgba(18,168,244,.16);border-color:v
   .profileColumn{display:none}
 }
 @media(max-width:760px){
-  .setupReminder{grid-template-columns:auto 1fr;padding:16px;gap:12px}.setupReminderProgress,.setupReminder .primaryBtn{grid-column:1/-1;width:100%}.notificationCard{grid-template-columns:1fr}.notificationIcon{width:40px;height:40px}.notificationsHero{padding:22px}.notificationsHero h3{font-size:25px}
-  .notificationControls{align-items:flex-start;flex-direction:column}.notificationControls .primaryBtn{width:100%}.handoffToast{right:16px;top:16px;grid-template-columns:42px 1fr}.handoffToast button{grid-column:1/-1;width:100%}
+  .setupReminder{grid-template-columns:auto 1fr;padding:16px;gap:12px}.setupReminderProgress,.setupReminder .primaryBtn{grid-column:1/-1;width:100%}.notificationCard{grid-template-columns:40px minmax(0,1fr);gap:12px;padding:15px;overflow:hidden}.notificationCard>div:last-child{grid-column:1/-1}.notificationCard>div:last-child .primaryBtn{width:100%}.notificationIcon{width:40px;height:40px}.notificationCopy{min-width:0}.notificationCopy h4,.notificationCopy p{max-width:100%;overflow-wrap:anywhere}.notificationsHero{padding:22px}.notificationsHero h3{font-size:25px}
+  .notificationsView,#panel-notifications,.notificationEmailSettings,.notificationEmailIntro,.notificationEmailHeadCopy,.notificationEmailActions,.notificationEmailStatus{min-width:0;max-width:100%}.notificationControls{grid-template-columns:40px minmax(0,1fr);align-items:center;padding:14px}.notificationControlsIcon{width:40px;height:40px}.notificationControls .primaryBtn{grid-column:1/-1;width:100%}.notificationEmailSettings{gap:15px;padding:15px;border-radius:18px}.notificationEmailToggle{grid-template-columns:42px minmax(0,1fr) 18px;align-items:center;gap:11px}.notificationEmailIcon{width:42px;height:42px;border-radius:13px}.notificationEmailHeadCopy>strong{font-size:15px}.notificationEmailHeadCopy>span{font-size:11.5px}.notificationEmailSummaryState{grid-column:2;justify-items:start}.notificationEmailSummaryState small{display:none}.notificationEmailChevron{grid-column:3;grid-row:1}.notificationEmailDetails{gap:15px;padding-top:15px}.notificationEmailDetailsTop{grid-template-columns:minmax(0,1fr)}.notificationEmailSwitch{width:100%;min-width:0;box-sizing:border-box}.notificationEmailSwitchCopy strong{white-space:normal}.notificationEmailRecipient{width:100%;min-width:0;box-sizing:border-box}.notificationEmailTypes{width:100%;grid-template-columns:minmax(0,1fr)}.notificationEmailType{width:100%;min-width:0;min-height:60px}.notificationEmailActions{align-items:stretch;flex-direction:column}.notificationEmailActions .primaryBtn{width:100%;min-width:0}.notificationEmailStatus{width:100%;overflow-wrap:anywhere}.handoffToast{right:16px;top:16px;grid-template-columns:42px 1fr}.handoffToast button{grid-column:1/-1;width:100%}
   body{background:#F5F7FB}
   .app{display:block;min-height:100vh;padding-bottom:86px}
   .sidebar{display:none}
@@ -939,6 +967,26 @@ body.conversations-view .listColumn,body.conversations-view .chatColumn,body.con
 .chatCloseButton{width:38px;height:38px;display:grid;place-items:center;flex:0 0 auto;border:1px solid var(--line);border-radius:11px;background:#fff;color:var(--slate-500);font-size:22px;line-height:1;cursor:pointer;transition:background .16s ease,color .16s ease,border-color .16s ease}
 .chatCloseButton:hover{background:var(--slate-100);border-color:var(--slate-300);color:var(--navy-800)}
 .chatCloseButton:focus-visible{outline:3px solid rgba(18,168,244,.2);outline-offset:2px}
+.conversationTrashButton{width:38px;height:38px;display:grid;place-items:center;flex:0 0 auto;border:1px solid var(--line);border-radius:11px;background:#fff;color:var(--slate-400);cursor:pointer;transition:background .16s ease,color .16s ease,border-color .16s ease}
+.conversationTrashButton svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.conversationTrashButton:hover:not(:disabled){background:#FFF3F1;border-color:#F2B8B0;color:#B43B2C}
+.conversationTrashButton:focus-visible{outline:3px solid rgba(180,59,44,.16);outline-offset:2px}
+.conversationTrashButton:disabled{opacity:.38;cursor:default}
+.conversationClearModal{position:fixed;inset:0;z-index:2600;display:grid;place-items:center;padding:20px;background:rgba(7,22,50,.55);backdrop-filter:blur(3px)}
+.conversationClearModal[hidden]{display:none}
+.conversationClearCard{width:min(440px,100%);padding:28px;border:1px solid rgba(255,255,255,.65);border-radius:24px;background:#fff;box-shadow:0 30px 80px rgba(7,22,50,.32);text-align:center}
+.conversationClearIcon{width:58px;height:58px;display:grid;place-items:center;margin:0 auto 16px;border-radius:18px;background:#FFF1EE;color:#B43B2C}
+.conversationClearIcon svg{width:27px;height:27px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.conversationClearCard h3{margin:0;color:var(--navy-900);font:900 21px/1.2 var(--font-display)}
+.conversationClearCard>p{margin:10px auto 0;max-width:38ch;color:var(--slate-500);font-size:13.5px;line-height:1.55}
+.conversationClearNote{display:flex;gap:9px;align-items:flex-start;margin:18px 0 0;padding:12px 13px;border:1px solid #DDE9F3;border-radius:14px;background:#F5FAFE;color:#47617C;text-align:left;font-size:12px;line-height:1.45}
+.conversationClearNote strong{color:#1477AA}
+.conversationClearActions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:20px}
+.conversationClearActions button{min-height:46px;border-radius:13px;font:800 13px var(--font-body);cursor:pointer}
+.conversationClearCancel{border:1px solid var(--line);background:#fff;color:var(--navy-900)}
+.conversationClearConfirm{border:0;background:#B43B2C;color:#fff;box-shadow:0 10px 24px rgba(180,59,44,.2)}
+.conversationClearConfirm:disabled{opacity:.58;cursor:wait}
+@media(max-width:760px){.conversationClearModal{align-items:end;padding:12px}.conversationClearCard{padding:24px 18px calc(20px + env(safe-area-inset-bottom));border-radius:24px}.conversationClearActions{grid-template-columns:1fr}.conversationClearConfirm{grid-row:1}.conversationTrashButton{position:absolute;right:58px;top:10px;z-index:2}}
 .messages{padding:22px;background:#F8FAFC;gap:14px;min-width:0}
 .bubble{max-width:74%;padding:11px 15px;font-size:14px;line-height:1.5;border-radius:16px;box-shadow:0 3px 10px rgba(8,22,52,.04);white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}
 .bubble.customer{align-self:flex-start;background:#fff;border:1px solid var(--line);border-bottom-left-radius:4px}
@@ -1230,7 +1278,7 @@ body.conversations-view:not(.chat-open) .thread{height:100%;padding:15px}
   body.conversations-view.chat-open .mobileCustomerNameCard{display:block}
 }
 @media(max-width:760px){
-  .panelVersionFixed{display:block;right:10px;bottom:76px;padding:5px 8px;font-size:8px;opacity:.82}.setupView{gap:14px}.setupSummaryPanel{padding:18px 16px;border-radius:17px}.setupSummaryHead{display:grid}.setupFlowSteps,.setupConfigGrid,.questionnaireList{grid-template-columns:1fr}.channelPlan{grid-template-columns:1fr}.setupDetailsToggle{width:100%}.setupProgressPanel{padding:18px 16px;border-radius:17px}.setupProgressBody{gap:12px;align-items:flex-start}.setupStory{font-size:15px;line-height:1.42;padding-right:2px}.setupEyebrow{font-size:9.5px;margin-bottom:6px}.setupStatus{position:static;width:max-content;margin-bottom:8px;padding:5px 9px}.setupProgressRing{width:72px;height:72px;padding:5px}.setupProgressRing strong{font-size:18px}.setupProgressRing span{font-size:6.5px;letter-spacing:.08em}.setupStepper{grid-column:1/-1;margin-top:15px;max-width:none}.setupStepLine{min-width:4px;margin:0 2px}.setupStepDot{width:26px;height:26px;font-size:10.5px}.setupNotice{padding:12px 14px;font-size:12px}.setupGrid,.industryQuestions,.setupAccountsGrid{grid-template-columns:1fr}.setupGrid .wide,.setupAccounts{grid-column:auto}.channelChoices{grid-template-columns:1fr 1fr}.setupStep{padding:18px 16px;border-radius:16px}.setupStepHead{grid-template-columns:38px 1fr;gap:11px;margin-bottom:18px}.setupStepNumber{width:38px;height:38px;font-size:16px}.setupStepHead h4{font-size:17px}.setupStepHead p{font-size:12px}.setupAccounts{padding:15px}.setupActions{display:grid;grid-template-columns:auto 1fr;bottom:76px;padding:12px}.setupActions p{grid-column:1/-1;order:-1;margin:0}.setupActions .setupSaveBtn{display:none}.setupActions .primaryBtn{width:100%}.setupActions.firstStep .primaryBtn{grid-column:1/-1}.setupActions .setupBackBtn{width:44px;padding:0}.retargetingPolicy{grid-column:auto}.policyGuardrails{grid-template-columns:1fr}.rtgHero,.rtgMainGrid{grid-template-columns:1fr}.rtgHero{padding:22px}.rtgSafetyCard{padding:16px}.rtgMetrics{grid-template-columns:1fr 1fr}.rtgJob{grid-template-columns:1fr}.rtgJobActions{justify-content:flex-start}
+.setupView{gap:14px}.setupSummaryPanel{padding:18px 16px;border-radius:17px}.setupSummaryHead{display:grid}.setupFlowSteps,.setupConfigGrid,.questionnaireList{grid-template-columns:1fr}.channelPlan{grid-template-columns:1fr}.setupDetailsToggle{width:100%}.setupProgressPanel{padding:18px 16px;border-radius:17px}.setupProgressBody{gap:12px;align-items:flex-start}.setupStory{font-size:15px;line-height:1.42;padding-right:2px}.setupEyebrow{font-size:9.5px;margin-bottom:6px}.setupStatus{position:static;width:max-content;margin-bottom:8px;padding:5px 9px}.setupProgressRing{width:72px;height:72px;padding:5px}.setupProgressRing strong{font-size:18px}.setupProgressRing span{font-size:6.5px;letter-spacing:.08em}.setupStepper{grid-column:1/-1;margin-top:15px;max-width:none}.setupStepLine{min-width:4px;margin:0 2px}.setupStepDot{width:26px;height:26px;font-size:10.5px}.setupNotice{padding:12px 14px;font-size:12px}.setupGrid,.industryQuestions,.setupAccountsGrid{grid-template-columns:1fr}.setupGrid .wide,.setupAccounts{grid-column:auto}.channelChoices{grid-template-columns:1fr 1fr}.setupStep{padding:18px 16px;border-radius:16px}.setupStepHead{grid-template-columns:38px 1fr;gap:11px;margin-bottom:18px}.setupStepNumber{width:38px;height:38px;font-size:16px}.setupStepHead h4{font-size:17px}.setupStepHead p{font-size:12px}.setupAccounts{padding:15px}.setupActions{display:grid;grid-template-columns:auto 1fr;bottom:76px;padding:12px}.setupActions p{grid-column:1/-1;order:-1;margin:0}.setupActions .setupSaveBtn{display:none}.setupActions .primaryBtn{width:100%}.setupActions.firstStep .primaryBtn{grid-column:1/-1}.setupActions .setupBackBtn{width:44px;padding:0}.retargetingPolicy{grid-column:auto}.policyGuardrails{grid-template-columns:1fr}.rtgHero,.rtgMainGrid{grid-template-columns:1fr}.rtgHero{padding:22px}.rtgSafetyCard{padding:16px}.rtgMetrics{grid-template-columns:1fr 1fr}.rtgJob{grid-template-columns:1fr}.rtgJobActions{justify-content:flex-start}
   .personalityHead{display:grid;padding:18px 16px}.personalityHead h3{font-size:20px}.personalityStatus{width:max-content}.personalityWorkspace{grid-template-columns:1fr}.personalityControls{grid-template-columns:1fr;padding:18px 16px;border-right:0;border-bottom:1px solid var(--line)}.personalityControls .wide,.personalityActions{grid-column:auto}.personalityActions{display:grid;grid-template-columns:1fr}.personalityActions p{margin:0}.personalityActions button{width:100%}.personalityPreview{padding:16px}.personalityChat{min-height:190px}.personalityTestRow{grid-template-columns:1fr}.personalityTestRow button{width:100%}
   body.conversations-view .content{padding:0}
   body.conversations-view .inboxShell{height:auto;min-height:calc(100vh - 174px);display:block}
@@ -1712,7 +1760,15 @@ ${panelRedesignEnabled ? `
   body.panel-redesign.conversations-view.chat-open .humanControlActions .controlBtn{height:42px;min-height:42px;padding:0 9px;font-size:12px}
   body.panel-redesign.conversations-view.chat-open .humanControlActions .controlBtn{display:flex;align-items:center;justify-content:center;text-align:center}
   body.panel-redesign.conversations-view.chat-open .composer{margin-top:7px!important}
-  body.panel-redesign.conversations-view.chat-open .composerRow textarea{min-height:42px;padding:9px 11px}
+  body.panel-redesign.conversations-view.chat-open .composerRow{display:grid;grid-template-columns:40px minmax(0,1fr) 42px;align-items:end;gap:8px;width:100%;min-width:0}
+  body.panel-redesign.conversations-view.chat-open .composerRow .emojiControl{width:40px;min-width:0}
+  body.panel-redesign.conversations-view.chat-open .composerRow textarea{width:100%;min-width:0;min-height:42px;padding:9px 11px;font-size:16px!important}
+  body.panel-redesign.conversations-view.chat-open .guidedReplyRow textarea{font-size:16px!important}
+  body.panel-redesign.conversations-view.chat-open .sendCircle{width:42px;min-width:42px;height:42px;padding:0;flex:0 0 42px}
+  body.panel-redesign.conversations-view.chat-open .emojiPicker{position:fixed;z-index:140;left:12px!important;right:12px!important;bottom:calc(72px + env(safe-area-inset-bottom));width:auto;max-height:min(220px,42dvh);grid-template-columns:repeat(8,minmax(0,1fr));overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+  body.panel-redesign.conversations-view.chat-open.profile-open .profileColumn{position:fixed;z-index:130;inset:0;display:flex!important;width:100vw;max-width:none;height:100dvh;min-height:0;border:0;background:#fff;box-shadow:none;overflow:hidden}
+  body.panel-redesign.conversations-view.chat-open.profile-open .profileColumn .profile{width:100%;height:100%;padding-top:64px;padding-bottom:calc(24px + env(safe-area-inset-bottom));overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+  body.panel-redesign.conversations-view.chat-open .profileDrawerClose{position:fixed;z-index:141;top:calc(12px + env(safe-area-inset-top));right:14px;width:40px;height:40px;display:grid;place-items:center;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--navy-900);font-size:24px;line-height:1;box-shadow:0 8px 20px rgba(10,24,54,.12)}
   body.panel-redesign.conversations-view.chat-open .statusLine{min-height:13px;padding-top:2px}
 }
 /* Orders layout repair: preserves the existing data/actions while matching the approved master-detail design. */
@@ -1885,7 +1941,7 @@ ${panelRedesignEnabled ? `
   .customer-panel-mobile-v389 .mobileProfileLogout{min-height:56px;display:flex;align-items:center;justify-content:center;gap:9px;margin-top:14px;border:1px solid #F0D1CB;border-radius:15px;background:#fff;color:#B83D29;font-size:13px;font-weight:900;text-decoration:none}
   .customer-panel-mobile-v389 .mobileProfileLogout svg{width:19px;height:19px}
   .customer-panel-mobile-v389 .mobileProfileVersion{display:block;margin-top:12px;color:#8B98AC;font-size:9px;font-weight:850;letter-spacing:.08em;text-align:center;text-transform:uppercase}
-  .customer-panel-mobile-v389 .panelVersionFixed{display:none}
+
   .customer-panel-mobile-v389 button,
   .customer-panel-mobile-v389 a,
   .customer-panel-mobile-v389 input,
@@ -2101,17 +2157,18 @@ body.panel-redesign .orderMobileOpenChat{display:none}
       <section class="${viewClass('panel-inbox')}" id="panel-inbox">
         <div class="inboxShell">
           <section class="column listColumn">
-            <div class="convListControls"><div class="searchBox"><span class="searchIcon" aria-hidden="true">⌕</span><input id="conversationSearch" aria-label="Buscar conversaciones" placeholder="${panelRedesignEnabled ? "Buscar nombre, teléfono o mensaje" : "Buscar por nombre, teléfono, correo o mensaje"}" oninput="renderThreads()"></div><div class="mobileOmnichannelStrip"><span>Todo en una bandeja</span><i></i><span class="channelStripBadges" data-channel-strip></span></div><div class="filters"${panelRedesignEnabled ? ' role="tablist" aria-label="Estado de las conversaciones"' : ""}><button id="filter-all" type="button"${panelRedesignEnabled ? ' role="tab"' : ""} onclick="setConversationFilter('all')">Todas <span>0</span></button><button id="filter-you" type="button"${panelRedesignEnabled ? ' role="tab"' : ""} onclick="setConversationFilter('you')">${panelRedesignEnabled ? "Para ti" : "Necesitan de ti"} <span>0</span></button><button id="filter-resolved" type="button"${panelRedesignEnabled ? ' role="tab"' : ""} onclick="setConversationFilter('resolved')">Resueltas <span>0</span></button></div></div>
+            <div class="convListControls"><div class="searchBox"><span class="searchIcon" aria-hidden="true">⌕</span><input id="conversationSearch" type="search" name="nextfor-conversation-search" readonly onfocus="unlockConversationSearch(this)" onpointerdown="unlockConversationSearch(this)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-form-type="other" aria-label="Buscar conversaciones" placeholder="${panelRedesignEnabled ? "Buscar nombre, teléfono o mensaje" : "Buscar por nombre, teléfono, correo o mensaje"}" oninput="renderThreads()"></div><div class="mobileOmnichannelStrip"><span>Todo en una bandeja</span><i></i><span class="channelStripBadges" data-channel-strip></span></div><div class="filters"${panelRedesignEnabled ? ' role="tablist" aria-label="Estado de las conversaciones"' : ""}><button id="filter-all" type="button"${panelRedesignEnabled ? ' role="tab"' : ""} onclick="setConversationFilter('all')">Todas <span>0</span></button><button id="filter-you" type="button"${panelRedesignEnabled ? ' role="tab"' : ""} onclick="setConversationFilter('you')">${panelRedesignEnabled ? "Para ti" : "Necesitan de ti"} <span>0</span></button><button id="filter-resolved" type="button"${panelRedesignEnabled ? ' role="tab"' : ""} onclick="setConversationFilter('resolved')">Resueltas <span>0</span></button></div></div>
             <div class="threads" id="threadList"><div class="empty">Cargando conversaciones...</div></div>
           </section>
           <section class="column chatColumn">
-            <div class="chatHead"><button class="mobileBack" type="button" onclick="closeConversation()">← Chats</button><span class="avatarChannelWrap"><span class="contactAvatar" id="chatAvatar">—</span><span class="channelBadge floating" id="chatChannelBadge" hidden></span></span><div class="chatIdentity"><h3 id="chatTitle">Selecciona una conversación</h3><p id="chatSubtitle">Elige un cliente para ver el historial.</p></div><span class="chatStatusPill" id="chatStatusPill">—</span>${panelRedesignEnabled ? '<button class="chatCloseButton" id="chatCloseButton" type="button" onclick="window.innerWidth<=760?closeConversation():toggleConversationProfile()" aria-label="Ver información del cliente" aria-controls="conversationProfile" aria-expanded="false" title="Ver información del cliente">×</button>' : '<button class="chatCloseButton" id="chatCloseButton" type="button" onclick="closeConversation()" aria-label="Cerrar conversación" title="Cerrar conversación">×</button>'}</div>
+            <div class="chatHead"><button class="mobileBack" type="button" onclick="closeConversation()">← Chats</button><span class="avatarChannelWrap"><span class="contactAvatar" id="chatAvatar">—</span><span class="channelBadge floating" id="chatChannelBadge" hidden></span></span><div class="chatIdentity"><h3 id="chatTitle">Selecciona una conversación</h3><p id="chatSubtitle">Elige un cliente para ver el historial.</p></div><span class="chatStatusPill" id="chatStatusPill">—</span><button class="conversationTrashButton" id="conversationTrashButton" type="button" onclick="openConversationClearConfirm()" aria-label="Vaciar conversación" title="Vaciar conversación" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6m4-6v6"/></svg></button>${panelRedesignEnabled ? '<button class="chatCloseButton" id="chatCloseButton" type="button" onclick="toggleConversationProfile()" aria-label="Ver información del cliente" aria-controls="conversationProfile" aria-expanded="false" title="Ver información del cliente">×</button>' : '<button class="chatCloseButton" id="chatCloseButton" type="button" onclick="closeConversation()" aria-label="Cerrar conversación" title="Cerrar conversación">×</button>'}</div>
             <div class="messages" id="messages"><div class="empty">Sin conversación seleccionada.</div></div>
             <div class="conversationAction">
               <section class="mobileCustomerNameCard"><h4>Nombre del cliente</h4><input id="mobileCustomerProfileName" maxlength="80" autocomplete="off" placeholder="Escribe el nombre" oninput="markMetaDirty()"><div class="nameSuggestion" id="mobileNameSuggestion" hidden><span>✦ Nextfor sugiere<strong id="mobileSuggestedCustomerName"></strong></span><button type="button" onclick="useSuggestedCustomerName(true)">Usar nombre</button></div><div class="mobileCustomerNameActions"><small id="mobileMetaHint">Confírmalo para recordarlo.</small><button class="ghostBtn" id="mobileSaveMetaBtn" type="button" onclick="saveCustomerMeta()">Guardar</button></div></section>
               ${panelRedesignEnabled
                 ? `<section class="humanControl" id="humanControl" aria-live="polite"><div class="handoffSwitch" role="group" aria-label="Quién responde esta conversación"><button id="handoffAiBtn" type="button" onclick="releaseControl()" aria-pressed="true">${PANEL_ICONS.sparkles}<span>La IA</span></button><button id="handoffHumanBtn" type="button" onclick="takeControl()" aria-pressed="false">${PANEL_ICONS.intervencion}<span>Tú</span></button></div><div class="humanControlCopy"><strong id="humanControlTitle">Autopiloto IA activo</strong><span id="humanControlCopy">La IA responde por ti. Toma el control cuando quieras.</span></div><div class="humanControlActions"><button class="controlBtn" id="takeControlBtn" type="button" onclick="takeControl()">Tomar el control</button><button class="controlBtn release" id="releaseControlBtn" type="button" onclick="releaseControl()">Devolver a la IA</button></div></section>`
                 : `<section class="humanControl" id="humanControl" aria-live="polite"><div class="humanControlCopy"><strong id="humanControlTitle">La IA está atendiendo</strong><span id="humanControlCopy">Toma el control para escribirle al cliente.</span></div><div class="humanControlActions"><button class="controlBtn" id="takeControlBtn" type="button" onclick="takeControl()">Tomar control</button><button class="controlBtn release" id="releaseControlBtn" type="button" onclick="releaseControl()">Devolver a la IA</button></div></section>`}
+              <div class="reportBugRow"><button class="reportBugTrigger" id="reportBugTrigger" type="button" onclick="openBugReport()"><span class="reportBugFlag" aria-hidden="true">⚑</span>¿La IA respondió mal aquí?</button></div>
               <section class="guidedAction" id="guidedAction"><div class="guidedTitle"><span>✦</span><strong>La IA ya redactó la respuesta por ti</strong></div><p id="guidedContext">Un mensaje tuyo puede cerrar esta conversación.</p><div class="guidedReplyRow"><textarea id="guidedReply" maxlength="1200" placeholder="La respuesta sugerida aparece aquí…" oninput="updateGuidedCount()"></textarea><div class="emojiControl"><button class="emojiButton" id="guidedEmojiButton" type="button" onclick="toggleEmojiPicker('guidedReply','guidedEmojiPicker',this,event)" aria-label="Agregar emoji" aria-controls="guidedEmojiPicker" aria-expanded="false">😊</button><div class="emojiPicker" id="guidedEmojiPicker" role="dialog" aria-label="Emojis" hidden>${emojiButtons}</div></div></div><div class="guidedFooter"><button class="confirmBtn" id="confirmSendBtn" type="button" onclick="confirmAndSend()">Confirmar y enviar →</button><button class="textBtn" id="alreadyResolvedBtn" type="button" onclick="resolveConversation()">Ya está resuelta</button><span>Solo revisas y envías — la IA hizo lo difícil.</span></div></section>
               <div class="stateBand" id="stateBand"></div>
               <div class="composer" id="composer"><div class="composerRow"><div class="emojiControl"><button class="emojiButton" id="replyEmojiButton" type="button" onclick="toggleEmojiPicker('replyText','replyEmojiPicker',this,event)" aria-label="Agregar emoji" aria-controls="replyEmojiPicker" aria-expanded="false">😊</button><div class="emojiPicker" id="replyEmojiPicker" role="dialog" aria-label="Emojis" hidden>${emojiButtons}</div></div>${panelRedesignEnabled ? '<textarea id="replyText" maxlength="1200" rows="1" placeholder="La IA está respondiendo — toma el control para escribir" oninput="updateReplyCount()"></textarea>' : '<input id="replyText" maxlength="1200" placeholder="Escribe para responder tú mismo…" oninput="updateReplyCount()">'}<button class="sendCircle" type="button" id="sendCircleBtn" onclick="sendReply()" aria-label="Enviar mensaje">➤</button></div><div class="composerActions"><small id="replyCount">0/1200</small><button class="primaryBtn" type="button" id="sendBtn" onclick="sendReply()">Enviar</button></div></div>
@@ -2450,8 +2507,31 @@ body.panel-redesign .orderMobileOpenChat{display:none}
             <p>Cuando la IA pida apoyo humano, recibirás una alerta inmediata y podrás abrir la conversación exacta desde aquí.</p>
           </section>
           <section class="notificationControls" id="notificationPushControls" hidden>
-            <div><strong>Recibe alertas aunque estés en otra pestaña</strong><span id="notificationPushStatus">Activa las notificaciones de este dispositivo.</span></div>
-            <button class="primaryBtn" id="notificationPushButton" type="button" onclick="enablePhoneNotifications()">Activar notificaciones</button>
+            <span class="notificationControlsIcon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg></span>
+            <div><small>Alertas en este dispositivo</small><strong>Entérate justo cuando un cliente te necesita</strong><span id="notificationPushStatus">Actívalas para responder a tiempo, incluso si estás en otra pestaña.</span></div>
+            <button class="primaryBtn" id="notificationPushButton" type="button" onclick="enablePhoneNotifications()">Activar alertas</button>
+          </section>
+          <section class="notificationEmailSettings" id="notificationEmailSettings" hidden>
+            <button class="notificationEmailToggle" id="notificationEmailToggle" type="button" onclick="toggleNotificationEmailSettings()" aria-expanded="false" aria-controls="notificationEmailDetails">
+              <span class="notificationEmailIcon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m3 7 9 6 9-6"></path></svg></span>
+              <span class="notificationEmailHeadCopy"><small class="notificationEmailEyebrow">Nextfor vigila por ti</small><strong>No dejes pasar lo que mueve tu negocio</strong><span>Configura los avisos que quieres recibir en tu correo.</span></span>
+              <span class="notificationEmailSummaryState"><strong id="notificationEmailSummaryStatus">Configurar correo</strong><small>Ver opciones</small></span>
+              <svg class="notificationEmailChevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+            </button>
+            <div class="notificationEmailDetails" id="notificationEmailDetails" hidden>
+              <div class="notificationEmailDetailsTop">
+                <label class="notificationEmailSwitch"><input id="notificationEmailEnabled" type="checkbox" onchange="previewNotificationEmailState()"><span class="notificationEmailSwitchTrack" aria-hidden="true"></span><span class="notificationEmailSwitchCopy"><strong>Alertas por correo</strong><small id="notificationEmailModeStatus">Desactivadas</small></span></label>
+                <div class="notificationEmailRecipient"><span class="notificationEmailRecipientIcon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"></path><path d="m4 7 8 6 8-6"></path></svg></span><div><small>Las alertas llegarán a</small><strong id="notificationEmailRecipient">—</strong></div></div>
+              </div>
+              <fieldset class="notificationEmailChoices"><legend>¿Qué quieres que vigilemos por ti?</legend><div class="notificationEmailTypes">
+                <label class="notificationEmailType"><input type="checkbox" data-notification-email-type="payment_pending"><span class="notificationEmailTypeCheck" aria-hidden="true"></span><span class="notificationEmailTypeCopy"><strong>Ventas listas para cerrar</strong><small>Pedidos y pagos por confirmar</small></span></label>
+                <label class="notificationEmailType"><input type="checkbox" data-notification-email-type="shipping_pending"><span class="notificationEmailTypeCheck" aria-hidden="true"></span><span class="notificationEmailTypeCopy"><strong>Pedidos listos para avanzar</strong><small>Envíos que esperan preparación</small></span></label>
+                <label class="notificationEmailType"><input type="checkbox" data-notification-email-type="sales_opportunity"><span class="notificationEmailTypeCheck" aria-hidden="true"></span><span class="notificationEmailTypeCopy"><strong>Clientes interesados</strong><small>Oportunidades que todavía puedes recuperar</small></span></label>
+                <label class="notificationEmailType"><input type="checkbox" data-notification-email-type="product_update"><span class="notificationEmailTypeCheck" aria-hidden="true"></span><span class="notificationEmailTypeCopy"><strong>Novedades de Nextfor</strong><small>Mejoras y mensajes importantes</small></span></label>
+                <label class="notificationEmailType"><input type="checkbox" data-notification-email-type="human_attention"><span class="notificationEmailTypeCheck" aria-hidden="true"></span><span class="notificationEmailTypeCopy"><strong>Clientes que te necesitan</strong><small>Conversaciones que requieren atención humana</small></span></label>
+              </div></fieldset>
+              <div class="notificationEmailActions"><span class="notificationEmailStatus" id="notificationEmailStatus">Activa el correo para que Nextfor pueda avisarte.</span><button class="primaryBtn" id="notificationEmailSave" type="button" onclick="saveNotificationEmailPreferences()">Guardar mis alertas</button></div>
+            </div>
           </section>
           <div class="notificationList" id="nextforNotifications">
             <article class="notificationEmpty">Cargando notificaciones de Nextfor…</article>
@@ -2562,13 +2642,28 @@ body.panel-redesign .orderMobileOpenChat{display:none}
     </div>
   </div>
 </div>
+<div class="conversationClearModal" id="conversationClearModal" hidden role="dialog" aria-modal="true" aria-labelledby="conversationClearTitle" onclick="if(event.target===this)closeConversationClearConfirm()"><div class="conversationClearCard"><span class="conversationClearIcon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6m4-6v6"/></svg></span><h3 id="conversationClearTitle">¿Vaciar esta conversación?</h3><p>El historial de <strong id="conversationClearCustomer">este cliente</strong> dejará de aparecer en tu panel.</p><div class="conversationClearNote"><span>✦</span><span><strong>Su perfil y sus pedidos se conservan.</strong> Si vuelve a escribir, aparecerá como una conversación nueva.</span></div><div class="conversationClearActions"><button class="conversationClearCancel" type="button" onclick="closeConversationClearConfirm()">Cancelar</button><button class="conversationClearConfirm" id="conversationClearConfirmButton" type="button" onclick="confirmConversationClear()">Sí, vaciar chat</button></div></div></div>
+<div class="bugModal" id="bugModal" hidden role="dialog" aria-modal="true" aria-labelledby="bugModalTitle"><div class="bugModalCard"><button class="bugModalClose" type="button" onclick="closeBugReport()" aria-label="Cerrar">×</button><span class="bugModalEyebrow">Nextfor te respalda</span><h3 id="bugModalTitle">¿La IA respondió mal en este chat?</h3><p class="bugModalLead">Cuéntanos qué pasó y lo corregimos. Nos llevamos la conversación completa, así que no tienes que explicar el contexto.</p><div class="bugReasons" id="bugReasons" role="radiogroup" aria-label="Qué fue lo que pasó"><button type="button" class="bugReason" data-bug-reason="respuesta_incorrecta" role="radio" aria-checked="false" onclick="pickBugReason(this)">Respondió algo incorrecto</button><button type="button" class="bugReason" data-bug-reason="no_entendio" role="radio" aria-checked="false" onclick="pickBugReason(this)">No entendió al cliente</button><button type="button" class="bugReason" data-bug-reason="no_respondio" role="radio" aria-checked="false" onclick="pickBugReason(this)">Se quedó sin responder</button><button type="button" class="bugReason" data-bug-reason="tono" role="radio" aria-checked="false" onclick="pickBugReason(this)">Respondió fuera de tono</button><button type="button" class="bugReason" data-bug-reason="otro" role="radio" aria-checked="false" onclick="pickBugReason(this)">Otra cosa</button></div><label class="bugNoteLabel" for="bugNote">¿Qué debió responder? <span>Opcional</span></label><textarea id="bugNote" maxlength="1000" placeholder="Ej. debió ofrecer el envío gratis a Bogotá."></textarea><p class="bugModalError" id="bugModalError" role="alert" hidden></p><div class="bugModalActions"><button class="bugModalGhost" type="button" onclick="closeBugReport()">Ahora no</button><button class="bugModalSend" id="bugSubmitBtn" type="button" onclick="submitBugReport()">Enviar a Nextfor</button></div><p class="bugModalFoot">Lo revisa nuestro equipo y lo corregimos. Tu bot aprende, tú no pierdes clientes.</p></div></div>
+${pwaEnabled ? `<div class="pwaInstall" id="pwaInstall" hidden role="dialog" aria-labelledby="pwaInstallTitle">
+  <button class="pwaInstallClose" type="button" onclick="dismissInstall()" aria-label="Ahora no">×</button>
+  <img class="pwaInstallIcon" src="/admin/assets/pwa-icon-192.png" alt="" aria-hidden="true">
+  <div class="pwaInstallCopy">
+    <strong id="pwaInstallTitle">Ten Nextfor a un toque</strong>
+    <p id="pwaInstallText">Instálalo en tu pantalla de inicio y entérate al instante cuando un cliente te necesite.</p>
+  </div>
+  <button class="pwaInstallCta" id="pwaInstallCta" type="button" onclick="runInstall()">Instalar</button>
+</div>
+<div class="pwaOffline" id="pwaOffline" hidden role="status">Sin conexión. Te mostramos lo último que cargamos.</div>
+<div class="pwaUpdate" id="pwaUpdate" hidden role="status">
+  <span>Hay una versión nueva de Nextfor.</span>
+  <button type="button" onclick="applyPwaUpdate()">Actualizar</button>
+</div>` : ""}
 <aside class="handoffToast" id="handoffToast" role="alert" aria-live="assertive">
   <span class="handoffToastIcon">🙋</span><div><strong id="handoffToastTitle">Un cliente necesita tu ayuda</strong><p id="handoffToastMessage">Abre la conversación para continuar.</p></div><button id="handoffToastButton" type="button" onclick="if(this.dataset.actionUrl)notificationAction(this.dataset.actionUrl,this.dataset.notificationId)">Abrir chat</button>
 </aside>
-<div class="panelVersionFixed" aria-label="Versión del Customer Panel">Versión ${escapeHtml(botVersion)}</div>
 ${panelRedesignEnabled ? '<div class="panelActionToast" id="panelActionToast" role="status" aria-live="polite" hidden></div>' : ""}
 <script>
-var INITIAL_TAB=${safeJson(initialTab)},INITIAL_CHANNEL=${safeJson(initialChannel)},INITIAL_CONVERSATION=${safeJson(initialConversation)},INITIAL_ORDER=${safeJson(initialOrder)},INITIAL_APPOINTMENT=${safeJson(initialAppointment)},SERVER_ROLE=${safeJson(auth.role)},SERVER_CAPABILITIES=${safeJson(capabilities)},PANEL_DATA_PATH=${safeJson(dataPath)},PANEL_HEALTH_PATH=${safeJson(healthPath)},PANEL_SETUP_PATH=${safeJson(setupPath)},PANEL_ONBOARDING_PATH="/admin/client-onboarding/data",PANEL_PERSONALITY_PATH="/admin/panel/bot-personality",PANEL_ACCOUNT_PATH="/admin/panel/account-profile",PANEL_PASSWORD_PATH="/admin/panel/account-password",PANEL_RETARGETING_PATH=${safeJson(retargetingPath)},PANEL_APPOINTMENTS_PATH=${safeJson(appointmentsPath)},PANEL_ORDERS_PATH=${safeJson(ordersPath)},PANEL_LOGIN_PATH=${safeJson(loginPath)},DEMO_MODE=${safeJson(demoMode)},PANEL_REDESIGN_ENABLED=${panelRedesignEnabled ? "true" : "false"},PANEL_ORDERS_ENABLED=${ordersEnabled ? "true" : "false"},PANEL_CONTEXT=${safeJson(panelContext)},PANEL_CHECK_ICON=${safeJson(PANEL_ICONS.check)},PANEL_PAYMENTS_ENABLED=${options.paymentsV1Enabled ? "true" : "false"},PANEL_CHANNEL_CONNECTIONS_ENABLED=${channelConnectionsV1Enabled ? "true" : "false"},PANEL_CHANNEL_CONNECTIONS_DEMO=${safeJson(channelConnectionsDemo)};
+var INITIAL_TAB=${safeJson(initialTab)},INITIAL_CHANNEL=${safeJson(initialChannel)},INITIAL_CONVERSATION=${safeJson(initialConversation)},INITIAL_ORDER=${safeJson(initialOrder)},INITIAL_APPOINTMENT=${safeJson(initialAppointment)},SERVER_ROLE=${safeJson(auth.role)},SERVER_CAPABILITIES=${safeJson(capabilities)},PANEL_DATA_PATH=${safeJson(dataPath)},PANEL_HEALTH_PATH=${safeJson(healthPath)},PANEL_SETUP_PATH=${safeJson(setupPath)},PANEL_ONBOARDING_PATH="/admin/client-onboarding/data",PANEL_PERSONALITY_PATH="/admin/panel/bot-personality",PANEL_ACCOUNT_PATH="/admin/panel/account-profile",PANEL_PASSWORD_PATH="/admin/panel/account-password",PANEL_RETARGETING_PATH=${safeJson(retargetingPath)},PANEL_APPOINTMENTS_PATH=${safeJson(appointmentsPath)},PANEL_ORDERS_PATH=${safeJson(ordersPath)},PANEL_LOGIN_PATH=${safeJson(loginPath)},DEMO_MODE=${safeJson(demoMode)},PANEL_REDESIGN_ENABLED=${panelRedesignEnabled ? "true" : "false"},PANEL_ORDERS_ENABLED=${ordersEnabled ? "true" : "false"},PANEL_CONTEXT=${safeJson(panelContext)},PANEL_CHECK_ICON=${safeJson(PANEL_ICONS.check)},PANEL_PAYMENTS_ENABLED=${options.paymentsV1Enabled ? "true" : "false"},PANEL_CHANNEL_CONNECTIONS_ENABLED=${channelConnectionsV1Enabled ? "true" : "false"},PANEL_CHANNEL_CONNECTIONS_DEMO=${safeJson(channelConnectionsDemo)},PWA_ENABLED=${pwaEnabled ? "true" : "false"};
 var PLAN_DATA=${safeJson(planData)};
 var PANEL_DEMO_ORDERS=[
  {id:1042,name:"Valentina Ríos",phone:"+57 311 456 7890",channel:"whatsapp",stage:"por_confirmar",created_at:new Date(Date.now()-8*60000).toISOString(),payment:"Transferencia · Bancolombia",paymentNote:"Comprobante recibido en el chat",location:"Bogotá · Chapinero",address:"Cra 13 #85-32, Apto 501",items:[{name:"Set Lego Technic 42143",qty:1,price:289900},{name:"Bloques MEGA 250 pzs",qty:1,price:39900}],shipping:12900},
@@ -2593,11 +2688,59 @@ var PANEL_DEMO_PLANS=[
  {id:"nextfor-tempo",nombre:"Nextfor Tempo",descripcion:"Agenda, confirma, reprograma y recuerda citas.",precio_mensual:299900,orden:3,beneficios:["Agenda 24/7","Recordatorios","Conexión con calendario"]},
  {id:"nextfor-atlas",nombre:"Nextfor Atlas",descripcion:"Atención y agendamiento en una operación completa.",precio_mensual:499900,orden:4,beneficios:["Dos bots coordinados","Automatizaciones avanzadas","Reportes e integraciones"]}
 ];
-var state={tab:INITIAL_TAB,channel:INITIAL_CHANNEL,filter:"all",conversationChannel:"all",bot:PANEL_CONTEXT.appointments&&!PANEL_CONTEXT.support?"appointments":"support",data:null,health:null,billing:null,billingLoading:false,channelConnections:null,channelConnectionsLoading:false,whatsappEmbedded:null,whatsappConnecting:false,whatsappVerification:null,whatsappVerificationExhaustedAttemptId:"",externalIntegrationPending:false,allConversations:[],conversations:[],selected:null,initialConversationApplied:false,metaDirty:false,draftTags:[],loading:false,historyLoading:false,historyExpanded:false,lastPanelLoadedAt:0,guidedDraft:"",guidedFor:null,setup:null,setupDirty:false,setupLoading:false,setupStep:0,setupActivated:false,onboarding:null,onboardingLoading:false,setupDetailsOpen:false,personality:null,personalityDirty:false,personalityCanEdit:false,accountProfile:null,accountProfileLoading:false,accountLogo:"",notifications:null,notificationStream:null,notificationAudio:null,retargeting:null,retargetingLoading:false,appointments:null,appointmentsLoading:false,appointmentMode:"week",appointmentSection:"agenda",appointmentFilter:"all",selectedAppointment:null,initialAppointmentApplied:false,reprogramDay:0,orderFilter:"all",orders:DEMO_MODE?PANEL_DEMO_ORDERS:[],ordersLoading:false,selectedOrder:DEMO_MODE?(INITIAL_ORDER||1042):null,initialOrderApplied:!!(DEMO_MODE&&INITIAL_ORDER),orderPane:DEMO_MODE&&INITIAL_ORDER?"detail":"list",opportunities:DEMO_MODE?PANEL_DEMO_OPPORTUNITIES:[],opportunityFilter:"pending"};
+var state={tab:INITIAL_TAB,channel:INITIAL_CHANNEL,filter:"all",conversationChannel:"all",bot:PANEL_CONTEXT.appointments&&!PANEL_CONTEXT.support?"appointments":"support",data:null,health:null,billing:null,billingLoading:false,channelConnections:null,channelConnectionsLoading:false,whatsappEmbedded:null,whatsappConnecting:false,whatsappVerification:null,whatsappVerificationExhaustedAttemptId:"",externalIntegrationPending:false,allConversations:[],conversations:[],selected:null,conversationClearKey:null,initialConversationApplied:false,metaDirty:false,draftTags:[],loading:false,historyLoading:false,historyExpanded:false,lastPanelLoadedAt:0,guidedDraft:"",guidedFor:null,setup:null,setupDirty:false,setupLoading:false,setupStep:0,setupActivated:false,onboarding:null,onboardingLoading:false,setupDetailsOpen:false,personality:null,personalityDirty:false,personalityLoading:false,personalityCanEdit:false,accountProfile:null,accountProfileLoading:false,accountLogo:"",notifications:null,notificationStream:null,notificationAudio:null,notificationEmailPreferences:null,notificationEmailLoading:false,notificationEmailExpanded:null,retargeting:null,retargetingLoading:false,appointments:null,appointmentsLoading:false,appointmentMode:"week",appointmentSection:"agenda",appointmentFilter:"all",selectedAppointment:null,initialAppointmentApplied:false,reprogramDay:0,orderFilter:"all",orders:DEMO_MODE?PANEL_DEMO_ORDERS:[],ordersLoading:false,selectedOrder:DEMO_MODE?(INITIAL_ORDER||1042):null,initialOrderApplied:!!(DEMO_MODE&&INITIAL_ORDER),orderPane:DEMO_MODE&&INITIAL_ORDER?"detail":"list",opportunities:DEMO_MODE?PANEL_DEMO_OPPORTUNITIES:[],opportunityFilter:"pending"};
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
 function attr(v){return esc(v).replace(/"/g,"&quot;");}
 function text(id,value){var el=document.getElementById(id);if(el)el.textContent=value;}
 var panelActionToastTimer=null;
+var bugReportReason="";
+// El reporte viaja SIN tenant: el servidor lo saca de la sesion firmada.
+// Aca solo mandamos que conversacion se estaba mirando y que fue lo que paso.
+// ─── PWA ────────────────────────────────────────────────────────────────────
+// El service worker es el MISMO que ya usaban las notificaciones. No se
+// registra uno nuevo: dos workers en el mismo scope se pisan y se pierde la
+// suscripcion push que el cliente ya acepto.
+var pwaInstallEvent=null,pwaWaitingWorker=null;
+function pwaStandalone(){return window.matchMedia&&window.matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;}
+function pwaIsIos(){return /iphone|ipad|ipod/i.test(navigator.userAgent)&&!window.MSStream;}
+// La cascara PWA (SW para instalar y offline) corre tambien en el demo, para
+// poder probar instalacion sin credenciales. La suscripcion push sigue aparte y
+// sí queda deshabilitada en demo (no hay backend de suscripcion para el demo).
+function setupPwa(){if(!PWA_ENABLED||!("serviceWorker" in navigator))return;
+navigator.serviceWorker.register("/admin/customer-notification-sw.js?pwa=1",{scope:"/admin/"}).then(function(registration){
+// Si ya hay una version nueva esperando, se avisa en vez de aplicarla sola:
+// recargar el panel debajo de alguien que esta escribiendo es peor que esperar.
+if(registration.waiting){pwaWaitingWorker=registration.waiting;show("pwaUpdate",true);}
+registration.addEventListener("updatefound",function(){var incoming=registration.installing;if(!incoming)return;
+incoming.addEventListener("statechange",function(){if(incoming.state==="installed"&&navigator.serviceWorker.controller){pwaWaitingWorker=incoming;show("pwaUpdate",true);}});});
+}).catch(function(){});
+var reloading=false;
+navigator.serviceWorker.addEventListener("controllerchange",function(){if(reloading)return;reloading=true;location.reload();});
+window.addEventListener("beforeinstallprompt",function(event){event.preventDefault();pwaInstallEvent=event;maybeOfferInstall();});
+window.addEventListener("appinstalled",function(){show("pwaInstall",false);pwaInstallEvent=null;});
+window.addEventListener("online",function(){show("pwaOffline",false);});
+window.addEventListener("offline",function(){show("pwaOffline",true);});
+if(!navigator.onLine)show("pwaOffline",true);
+maybeOfferInstall();}
+function maybeOfferInstall(){if(!PWA_ENABLED||pwaStandalone())return;
+try{if(localStorage.getItem("nextfor_install_dismissed")==="1")return;}catch(_){}
+var card=document.getElementById("pwaInstall");if(!card)return;
+if(pwaInstallEvent){card.classList.remove("ios");show("pwaInstall",true);return;}
+// En iPhone no existe el boton de instalar: Safari obliga a Compartir >
+// Anadir a inicio, y sin ese paso NO hay notificaciones push en iOS.
+if(pwaIsIos()){card.classList.add("ios");
+text("pwaInstallText","Toca Compartir y luego \\u201cAñadir a pantalla de inicio\\u201d. En iPhone ese paso es el que habilita los avisos.");
+show("pwaInstall",true);}}
+function runInstall(){if(!pwaInstallEvent)return;pwaInstallEvent.prompt();pwaInstallEvent.userChoice.then(function(){pwaInstallEvent=null;show("pwaInstall",false);});}
+function dismissInstall(){show("pwaInstall",false);try{localStorage.setItem("nextfor_install_dismissed","1");}catch(_){}}
+function applyPwaUpdate(){if(!pwaWaitingWorker){location.reload();return;}pwaWaitingWorker.postMessage({type:"NEXTFOR_APPLY_UPDATE"});show("pwaUpdate",false);}
+function unlockConversationSearch(input){if(!input||!input.readOnly)return;input.readOnly=false;if(input.value){input.value="";if(typeof renderThreads==="function")renderThreads();}}
+function openBugReport(){var modal=document.getElementById("bugModal");if(!modal)return;bugReportReason="";document.querySelectorAll("#bugReasons .bugReason").forEach(function(button){button.classList.remove("active");button.setAttribute("aria-checked","false");});var note=document.getElementById("bugNote");if(note)note.value="";bugReportError("");var send=document.getElementById("bugSubmitBtn");if(send){send.disabled=false;send.textContent="Enviar a Nextfor";}modal.hidden=false;}
+function closeBugReport(){var modal=document.getElementById("bugModal");if(modal)modal.hidden=true;}
+function pickBugReason(button){if(!button)return;bugReportReason=button.getAttribute("data-bug-reason")||"";document.querySelectorAll("#bugReasons .bugReason").forEach(function(item){var active=item===button;item.classList.toggle("active",active);item.setAttribute("aria-checked",active?"true":"false");});bugReportError("");}
+function bugReportError(message){var node=document.getElementById("bugModalError");if(!node)return;node.textContent=String(message||"");node.hidden=!message;}
+function bugReportLastTexts(item){var messages=item&&item.messages||[],customer="",bot="";for(var index=messages.length-1;index>=0;index--){var author=messages[index].author||"bot",text=messages[index].text||"";if(!bot&&author!=="customer")bot=text;if(!customer&&author==="customer")customer=text;if(bot&&customer)break;}return {customer:customer,bot:bot};}
+function submitBugReport(){if(!bugReportReason){bugReportError("Cuéntanos qué fue lo que pasó.");return;}var send=document.getElementById("bugSubmitBtn");if(send){send.disabled=true;send.textContent="Enviando…";}bugReportError("");var item=findConversation(state.selected),texts=bugReportLastTexts(item),note=document.getElementById("bugNote");api("/admin/panel/bug-reports",{method:"POST",body:JSON.stringify({reason:bugReportReason,note:note?note.value:"",conversation_id:state.selected||"",channel:item&&item.channel||"",customer_message:texts.customer,bot_reply:texts.bot})}).then(function(){closeBugReport();panelToast("Listo. Nuestro equipo ya lo está revisando.");}).catch(function(error){if(send){send.disabled=false;send.textContent="Enviar a Nextfor";}bugReportError(error&&error.message||"No pudimos enviar el reporte. Intenta de nuevo.");});}
 function panelToast(message,error){var node=document.getElementById("panelActionToast");if(!node)return;node.textContent=String(message||"");node.classList.toggle("error",!!error);node.hidden=false;clearTimeout(panelActionToastTimer);panelActionToastTimer=setTimeout(function(){node.hidden=true;},4200);}
 function syncBotSidebar(){if(PANEL_CONTEXT.v2&&!PANEL_CONTEXT.appointments&&state.bot==="appointments")state.bot=PANEL_CONTEXT.support?"support":"account";var support=state.bot==="support",appointments=state.bot==="appointments"&&(!PANEL_CONTEXT.v2||PANEL_CONTEXT.appointments),s=document.getElementById("navSupport"),a=document.getElementById("navAppointments"),bs=document.getElementById("bot-support"),ba=document.getElementById("bot-appointments"),mbs=document.getElementById("mobile-bot-support"),mba=document.getElementById("mobile-bot-appointments"),bar=document.getElementById("mobileTabbar");if(s)s.style.display=support?"grid":"none";if(a)a.style.display=appointments?"grid":"none";[[bs,support],[ba,appointments],[mbs,support],[mba,appointments]].forEach(function(row){if(!row[0])return;row[0].classList.toggle("active",row[1]);row[0].setAttribute("aria-pressed",row[1]?"true":"false");});document.querySelectorAll("#mobileTabbar [data-bot]").forEach(function(button){var scope=button.getAttribute("data-bot"),allowed=scope===state.bot;if(PANEL_CONTEXT.v2&&scope==="appointments"&&!PANEL_CONTEXT.appointments)allowed=false;if(PANEL_CONTEXT.v2&&scope==="support"&&!PANEL_CONTEXT.support)allowed=false;button.style.display=allowed?"grid":"none";});var profile=document.getElementById("mnav-mobile-profile");if(profile)profile.style.display="grid";if(bar){var visible=Array.prototype.filter.call(bar.children,function(button){return button.style.display!=="none";}).length;bar.style.setProperty("--mobile-tabs",String(Math.max(3,visible)));}updateMobilePrimaryNav();}
 function selectBot(bot){var next=bot==="appointments"?"appointments":"support";if(PANEL_CONTEXT.v2&&!PANEL_CONTEXT[next])return;state.bot=next;syncBotSidebar();showTab(state.bot==="support"?"summary":"appointments");}
@@ -2780,18 +2923,22 @@ function renderAppointmentCalendarGroup(calendars,canManage){calendars=(calendar
 function renderChannelConnections(){
   var root=document.getElementById("channelConnectionCards"),payload=state.channelConnections;
   if(!root||!payload)return;
+  // Descarga anticipada del SDK de Meta para que el toque del cliente abra la ventana al instante.
+  if(!DEMO_MODE&&!window.FB&&payload.meta_authorization_available&&payload.meta_authorization_available.whatsapp!==false)preloadMetaSdk().catch(function(){});
   var canManage=SERVER_ROLE==="admin"||SERVER_ROLE==="super_admin",available=payload.meta_authorization_available||{},hints=selectedChannelHints(onboardingAnswers()),cards=(payload.channels||[]).map(function(item){
     var channel=item.channel||item.id,status=item.status||"not_connected",soon=item.coming_soon||item.available===false,recommended=hints.includes(channel),primary=channel==="whatsapp",connected=status==="connected",billingBlocked=primary&&item.outbound_billing_blocked===true,attemptActive=primary&&item.onboarding_attempt_active===true,activeConnection=primary&&item.disconnect_available===true&&!attemptActive,verifyAvailable=attemptActive&&whatsappAttemptCanVerify(item),cancelAttemptAvailable=attemptActive&&item.cancel_attempt_available===true,verifyBusy=verifyAvailable&&whatsappVerificationBusy(),account=item.account_label?'<div class="channelAccount">'+esc(item.account_label)+'</div>':recommended?'<div class="channelAccount">Sugerido por tu cuestionario</div>':"",activationMessage=attemptActive&&item.onboarding_attempt_message||item.activation_message||primary&&!connected&&!attemptActive&&!activeConnection&&"Elige Conectar número nuevo, Conservar mi WhatsApp Business si seguirás usando la app, o Volver a conectar si el número ya estuvo en Nextfor o Cloud API. Para coexistencia, Meta puede exigir al menos 7 días de actividad real."||"",activation=activationMessage?'<div class="channelAccount">'+esc(activationMessage)+'</div>':"",actions='<span class="channelState '+attr(status)+'">'+esc(soon?"Próximamente":channelConnectionStatusLabel(status))+'</span>';
     if(!soon&&canManage){
       if(primary){
-        if(connected||activeConnection){
+        if(state.whatsappLaunch){
+          actions+=whatsappLaunchPanel();
+        }else if(connected||activeConnection){
           if(billingBlocked)actions+='<button class="primaryBtn" type="button" onclick="checkWhatsAppBillingConnection(this)"'+(state.whatsappConnecting?' disabled aria-busy="true"':'')+'>'+(state.whatsappConnecting?'Comprobando…':'Comprobar pago')+'</button>';
           if(item.disconnect_available)actions+='<button class="ghostBtn" type="button" data-channel="'+attr(channel)+'" data-name="'+attr(item.name||channel)+'" onclick="disconnectChannel(this.dataset.channel,this.dataset.name)">Desconectar</button>';
         }else if(attemptActive){
           if(verifyAvailable)actions+='<button class="primaryBtn" type="button" onclick="checkWhatsAppConnection(this)"'+(state.whatsappConnecting||verifyBusy?' disabled aria-busy="true"':'')+'>'+(verifyBusy?'Comprobando…':'Comprobar conexión')+'</button>';
           if(cancelAttemptAvailable)actions+='<button class="ghostBtn" type="button" onclick="cancelWhatsAppAttempt(this)"'+(state.whatsappConnecting||verifyBusy?' disabled aria-busy="true"':'')+'>'+(state.whatsappConnecting?'Cancelando…':'Cancelar intento')+'</button>';
         }else if((item.connect_available||item.reconnect_available)&&available.whatsapp!==false){
-          actions+=whatsappConnectAction(available.whatsapp_coexistence!==false);
+          actions+=whatsappBrowserWarning()+whatsappConnectAction(available.whatsapp_coexistence!==false);
         }
       }else{
         if(item.requires_selection){
@@ -2987,18 +3134,42 @@ function checkWhatsAppBillingConnection(){
   });
 }
 var metaSdkPromise=null,WHATSAPP_EMBEDDED_COMPLETION_TIMEOUT_MS=30000;
-function loadMetaSdk(config){
-  if(window.FB){window.FB.init({appId:config.app_id,cookie:false,xfbml:false,version:config.graph_version||"v25.0"});return Promise.resolve(window.FB);}
+// El SDK de Meta se descarga apenas se muestra el hub de canales. Así, cuando el
+// cliente toca "Abrir Meta", FB.login se llama en el mismo gesto del dedo y los
+// navegadores móviles (Safari iOS / Chrome Android) no bloquean la ventana.
+function preloadMetaSdk(){
+  if(window.FB)return Promise.resolve(window.FB);
   if(metaSdkPromise)return metaSdkPromise;
   metaSdkPromise=new Promise(function(resolve,reject){
-    var settled=false,existing=document.getElementById("facebook-jssdk"),script=document.createElement("script"),timer;
+    var settled=false,existing=document.getElementById("facebook-jssdk"),script=document.createElement("script"),timer,poll;
     if(existing&&existing.parentNode)existing.parentNode.removeChild(existing);
-    function fail(error){if(settled)return;settled=true;clearTimeout(timer);if(script.parentNode)script.parentNode.removeChild(script);metaSdkPromise=null;reject(error);}
-    timer=setTimeout(function(){fail(new Error("meta_sdk_timeout"));},15000);
-    window.fbAsyncInit=function(){if(settled)return;settled=true;clearTimeout(timer);window.FB.init({appId:config.app_id,cookie:false,xfbml:false,version:config.graph_version||"v25.0"});resolve(window.FB);};
+    function done(){if(settled)return;settled=true;clearTimeout(timer);clearInterval(poll);resolve(window.FB);}
+    function fail(error){if(settled)return;settled=true;clearTimeout(timer);clearInterval(poll);if(script.parentNode)script.parentNode.removeChild(script);metaSdkPromise=null;reject(error);}
+    timer=setTimeout(function(){if(window.FB)done();else fail(new Error("meta_sdk_timeout"));},20000);
+    poll=setInterval(function(){if(window.FB)done();},150);
+    window.fbAsyncInit=function(){done();};
     script.id="facebook-jssdk";script.async=true;script.defer=true;script.crossOrigin="anonymous";script.src="https://connect.facebook.net/es_LA/sdk.js";script.onerror=function(){fail(new Error("meta_sdk_unavailable"));};document.head.appendChild(script);
   });
   return metaSdkPromise;
+}
+function initMetaSdk(config){
+  if(!window.FB)throw new Error("meta_sdk_unavailable");
+  window.FB.init({appId:config.app_id,cookie:false,xfbml:false,version:config.graph_version||"v25.0"});
+  return window.FB;
+}
+function loadMetaSdk(config){return preloadMetaSdk().then(function(){return initMetaSdk(config);});}
+function whatsappInAppBrowser(){
+  var ua=String(navigator&&navigator.userAgent||"");
+  if(/FBAN|FBAV|FB_IAB|FBIOS|Instagram|Line[/]|MicroMessenger|TikTok|Snapchat|Twitter|WhatsApp/i.test(ua))return true;
+  if(/Android/i.test(ua)&&/; wv[)]/i.test(ua))return true;
+  if(/iPhone|iPad|iPod/i.test(ua)&&!/Safari/i.test(ua)&&!/CriOS|FxiOS|EdgiOS/i.test(ua))return true;
+  return false;
+}
+function copyPanelLink(button){
+  var url=location.href;
+  function ok(){if(button){button.textContent="Enlace copiado ✓";setTimeout(function(){button.textContent="Copiar enlace";},2500);}}
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(url).then(ok).catch(function(){setChannelConnectionMessage("Copia esta dirección y ábrela en Chrome o Safari: "+url,"error");});
+  else setChannelConnectionMessage("Copia esta dirección y ábrela en Chrome o Safari: "+url,"error");
 }
 function completeWhatsAppEmbeddedSignup(){
   var pending=state.whatsappEmbedded;
@@ -3011,6 +3182,7 @@ function completeWhatsAppEmbeddedSignup(){
   api("/admin/panel/channel-connections/whatsapp/complete",{method:"POST",body:JSON.stringify({state:pending.config.oauth_state,code:pending.code,session:pending.session})}).then(function(body){
     var connection=body&&body.connection||null,connected=!!(connection&&connection.status==="connected");
     state.whatsappEmbedded=null;
+    state.whatsappLaunch=null;
     state.whatsappConnecting=false;
     state.channelConnections=null;
     if(connected){
@@ -3026,6 +3198,7 @@ function completeWhatsAppEmbeddedSignup(){
     loadChannelConnections(true);
   }).catch(function(error){
     state.whatsappEmbedded=null;
+    state.whatsappLaunch=null;
     state.whatsappConnecting=false;
     stopWhatsAppVerification();
     renderChannelConnections();
@@ -3043,7 +3216,7 @@ function discardUnboundWhatsAppAttempt(message){
   var pending=state.whatsappEmbedded;
   if(!pending||pending.completing)return false;
   if(pending.sessionTimer){clearTimeout(pending.sessionTimer);pending.sessionTimer=null;}
-  stopWhatsAppVerification({clearExhausted:true});state.whatsappEmbedded=null;state.whatsappConnecting=false;state.channelConnections=null;
+  stopWhatsAppVerification({clearExhausted:true});state.whatsappEmbedded=null;state.whatsappLaunch=null;state.whatsappConnecting=false;state.channelConnections=null;
   renderChannelConnections();setChannelConnectionMessage(message||"Meta no devolvió la autorización completa. Ya puedes volver a intentar.","error");
   api("/admin/panel/channel-connections/whatsapp/attempt",{method:"DELETE"}).then(function(){
     state.channelConnections=null;loadChannelConnections(true);
@@ -3079,32 +3252,106 @@ function whatsappEmbeddedEventMode(eventName,expectedMode){
   if(name==="FINISH_ONLY_WABA"&&mode==="coexistence_recovery")return"coexistence_recovery";
   return whatsappEmbeddedCloudFinishEvent(name)?"cloud_api":"";
 }
-function launchWhatsAppEmbeddedSignup(config){
+function whatsappLoginExtras(config){
+  return config.onboarding_mode==="coexistence"
+    ?{setup:{},featureType:"whatsapp_business_app_onboarding",sessionInfoVersion:"3"}
+    :config.onboarding_mode==="coexistence_recovery"
+      ?{features:[{name:"app_only_install"}]}
+      :{};
+}
+function whatsappLaunchModeLabel(mode){
+  return mode==="coexistence"?"tu WhatsApp Business actual":mode==="coexistence_recovery"?"tu número existente":"tu número nuevo";
+}
+// Paso 1: pedimos la autorización al servidor y dejamos el SDK listo.
+// No abrimos ninguna ventana aquí: el navegador móvil la bloquearía.
+function prepareWhatsAppConnection(mode){
+  mode=mode==="coexistence"||mode==="coexistence_recovery"?mode:"cloud_api";
+  if(state.whatsappLaunch||state.whatsappEmbedded||state.whatsappConnecting)return;
+  var launch={mode:mode,status:"preparing",config:null,cancelled:false};
   stopWhatsAppVerification({clearExhausted:true});
+  state.whatsappLaunch=launch;
+  renderChannelConnections();
+  setChannelConnectionMessage("Preparando la conexión segura con Meta…");
+  Promise.all([
+    api("/admin/panel/channel-connections/whatsapp/connect",{method:"POST",body:JSON.stringify({onboarding_mode:mode})}),
+    preloadMetaSdk()
+  ]).then(function(results){
+    var body=results[0]||{};
+    if(launch.cancelled||state.whatsappLaunch!==launch){releaseWhatsAppAttempt();return;}
+    if(!body.embedded_signup)throw new Error("embedded_signup_unavailable");
+    initMetaSdk(body.embedded_signup);
+    launch.config=body.embedded_signup;
+    launch.status="ready";
+    renderChannelConnections();
+    setChannelConnectionMessage("Todo listo. Toca «Abrir Meta y elegir mi número» para continuar.","success");
+  }).catch(function(error){
+    var wasCancelled=launch.cancelled;
+    if(state.whatsappLaunch===launch)state.whatsappLaunch=null;
+    releaseWhatsAppAttempt();
+    if(wasCancelled)return;
+    renderChannelConnections();
+    setChannelConnectionMessage(error&&error.body&&error.body.message||"No pudimos preparar la conexión con Meta. Revisa tu internet y vuelve a intentar.","error");
+  });
+}
+function releaseWhatsAppAttempt(){
+  return api("/admin/panel/channel-connections/whatsapp/attempt",{method:"DELETE"}).catch(function(){}).then(function(){
+    state.channelConnections=null;loadChannelConnections(true);
+  });
+}
+function cancelWhatsAppLaunch(){
+  var launch=state.whatsappLaunch;
+  if(!launch)return;
+  launch.cancelled=true;
+  state.whatsappLaunch=null;
+  state.whatsappEmbedded=null;
+  state.whatsappConnecting=false;
+  stopWhatsAppVerification({clearExhausted:true});
+  renderChannelConnections();
+  setChannelConnectionMessage("Intento cancelado. Puedes empezar de nuevo cuando quieras.");
+  if(launch.status!=="preparing")releaseWhatsAppAttempt();
+}
+// Paso 2: se ejecuta DENTRO del toque del usuario, así que FB.login abre la
+// ventana de Meta sin que el navegador la bloquee. No poner nada asíncrono antes.
+function openWhatsAppMetaWindow(){
+  var launch=state.whatsappLaunch;
+  if(!launch||launch.status!=="ready"||!launch.config)return;
+  var config=launch.config,openedAt=Date.now();
+  if(!window.FB){setChannelConnectionMessage("La conexión de Meta no quedó lista. Cancela e intenta de nuevo.","error");return;}
+  launch.status="opening";
   state.whatsappEmbedded={config:config,code:null,session:null,completing:false};
   state.whatsappConnecting=true;
-  renderChannelConnections();
-  loadMetaSdk(config).then(function(FB){
-    FB.login(function(response){
-      var pending=state.whatsappEmbedded,code=response&&response.authResponse&&response.authResponse.code;
-      if(!pending)return;
-      if(!code){discardUnboundWhatsAppAttempt("La autorización de Meta no se completó. El intento se limpió de forma segura; vuelve a intentarlo.");return;}
-      pending.code=code;
-      armWhatsAppEmbeddedCompletionTimer(pending);
-      setChannelConnectionMessage("Meta autorizó la cuenta. Terminando la conexión…");completeWhatsAppEmbeddedSignup();
-    },{
-      config_id:config.configuration_id,
-      response_type:"code",
-      override_default_response_type:true,
-      extras:config.onboarding_mode==="coexistence"
-        ?{setup:{},featureType:"whatsapp_business_app_onboarding",sessionInfoVersion:"3"}
-        :config.onboarding_mode==="coexistence_recovery"
-          ?{features:[{name:"app_only_install"}]}
-          :{}
-    });
-  }).catch(function(){
-    discardUnboundWhatsAppAttempt("No pudimos abrir la conexión segura de Meta. El intento se limpió de forma segura; vuelve a intentarlo.");
+  window.FB.login(function(response){
+    var pending=state.whatsappEmbedded,code=response&&response.authResponse&&response.authResponse.code;
+    if(!pending)return;
+    if(!code){
+      var blocked=Date.now()-openedAt<1500&&!pending.session;
+      discardUnboundWhatsAppAttempt(blocked
+        ?"Tu navegador bloqueó la ventana de Meta. Permite ventanas emergentes para Nextfor, o abre este panel en Chrome o Safari, y vuelve a intentar."
+        :"La autorización de Meta no se completó. El intento se limpió de forma segura; vuelve a intentarlo.");
+      return;
+    }
+    pending.code=code;
+    armWhatsAppEmbeddedCompletionTimer(pending);
+    setChannelConnectionMessage("Meta autorizó la cuenta. Terminando la conexión…");completeWhatsAppEmbeddedSignup();
+  },{
+    config_id:config.configuration_id,
+    response_type:"code",
+    override_default_response_type:true,
+    extras:whatsappLoginExtras(config)
   });
+  renderChannelConnections();
+  setChannelConnectionMessage("Se abrió la ventana de Meta. Termina allí y vuelve a esta pantalla.");
+}
+function whatsappLaunchPanel(){
+  var launch=state.whatsappLaunch;
+  if(!launch)return "";
+  if(launch.status==="preparing")return '<div class="whatsappLaunchBox"><p class="whatsappLaunchStep">Paso 1 de 2</p><p class="whatsappLaunchTitle"><span class="whatsappLaunchSpinner"></span>Preparando la conexión segura…</p><p class="whatsappLaunchHint">Tarda unos segundos. No cierres esta pantalla.</p><button class="ghostBtn" type="button" onclick="cancelWhatsAppLaunch()">Cancelar</button></div>';
+  if(launch.status==="ready")return '<div class="whatsappLaunchBox ready"><p class="whatsappLaunchStep">Paso 2 de 2</p><p class="whatsappLaunchTitle">Listo para conectar '+esc(whatsappLaunchModeLabel(launch.mode))+'</p><p class="whatsappLaunchHint">Toca el botón y se abrirá la ventana de Meta. Inicia sesión con tu Facebook y elige tu número de WhatsApp.</p><button class="primaryBtn whatsappLaunchBtn" type="button" onclick="openWhatsAppMetaWindow()">Abrir Meta y elegir mi número</button><button class="ghostBtn" type="button" onclick="cancelWhatsAppLaunch()">Cancelar</button></div>';
+  return '<div class="whatsappLaunchBox"><p class="whatsappLaunchTitle">Ventana de Meta abierta</p><p class="whatsappLaunchHint">Termina en la ventana de Meta y vuelve a esta pantalla. Si se cerró sin terminar, toca Cancelar y empieza de nuevo.</p><button class="ghostBtn" type="button" onclick="cancelWhatsAppLaunch()">Cancelar</button></div>';
+}
+function whatsappBrowserWarning(){
+  if(!whatsappInAppBrowser())return "";
+  return '<div class="whatsappLaunchBox warn"><p class="whatsappLaunchTitle">Abre esta página en tu navegador</p><p class="whatsappLaunchHint">Estás dentro de otra app (por ejemplo WhatsApp o Instagram) y Meta no permite conectar desde ahí. Copia el enlace y ábrelo en Chrome o Safari.</p><button class="ghostBtn" type="button" onclick="copyPanelLink(this)">Copiar enlace</button></div>';
 }
 window.addEventListener("message",function(event){
   if(!trustedWhatsAppEmbeddedOrigin(event.origin))return;
@@ -3129,24 +3376,17 @@ window.addEventListener("message",function(event){
 });
 function connectChannel(channel,onboardingMode){
   if(DEMO_MODE){setChannelConnectionMessage("Demo: aquí continuarías con Meta para elegir la cuenta de tu negocio.","success");return;}
-  if(channel==="whatsapp"&&(state.whatsappConnecting||state.whatsappEmbedded))return;
-  var externalTab=channel==="whatsapp"?null:prepareExternalIntegrationTab("Meta");
-  if(channel!=="whatsapp"&&!externalTab){setChannelConnectionMessage("Tu navegador bloqueó la nueva pestaña. Permite ventanas emergentes para Nextfor y vuelve a intentar.","error");return;}
-  if(channel==="whatsapp"){
-    stopWhatsAppVerification({clearExhausted:true});
-    state.whatsappConnecting=true;
-    renderChannelConnections();
-  }
-  setChannelConnectionMessage(channel==="whatsapp"?"Abriendo la conexión segura de WhatsApp…":"Meta se abrirá en una pestaña nueva…");
-  var requestBody=channel==="whatsapp"?JSON.stringify({onboarding_mode:onboardingMode==="coexistence"||onboardingMode==="coexistence_recovery"?onboardingMode:"cloud_api"}):"{}";
+  if(channel==="whatsapp"){prepareWhatsAppConnection(onboardingMode);return;}
+  var externalTab=prepareExternalIntegrationTab("Meta");
+  if(!externalTab){setChannelConnectionMessage("Tu navegador bloqueó la nueva pestaña. Permite ventanas emergentes para Nextfor y vuelve a intentar.","error");return;}
+  setChannelConnectionMessage("Meta se abrirá en una pestaña nueva…");
+  var requestBody="{}";
   api("/admin/panel/channel-connections/"+encodeURIComponent(channel)+"/connect",{method:"POST",body:requestBody}).then(function(body){
-    if(channel==="whatsapp"&&body.embedded_signup){launchWhatsAppEmbeddedSignup(body.embedded_signup);return;}
     if(!body.authorization_url)throw new Error("authorization_unavailable");
     if(!navigateExternalIntegrationTab(externalTab,body.authorization_url))throw new Error("popup_navigation_failed");
     setChannelConnectionMessage("Meta se abrió en una pestaña nueva. Termina allí y luego vuelve a este panel.","success");
   }).catch(function(error){
     closeExternalIntegrationTab(externalTab);
-    if(channel==="whatsapp"){state.whatsappEmbedded=null;state.whatsappConnecting=false;renderChannelConnections();}
     setChannelConnectionMessage(error.body&&error.body.message||"No pudimos terminar este paso. Intenta de nuevo o habla con NextforIA.","error");
     loadChannelConnections(true);
   });
@@ -3187,7 +3427,7 @@ function mobileGoChats(){
   showTab("appointments");if(typeof showAppointmentSection==="function")showAppointmentSection("chats");
 }
 function mobileDetailBack(){if(state.tab==="orders"&&state.orderPane==="detail"){closeOrderDetail();return;}var profileTabs=["plan","channels","setup","notifications","tests"];if(profileTabs.includes(state.tab)){openProfile();return;}if(state.bot==="appointments"){showTab("appointments");if(typeof showAppointmentSection==="function")showAppointmentSection("agenda");return;}showTab("summary");}
-function updateMobileDetailHeader(){var header=document.getElementById("mobileDetailHeader"),title=document.getElementById("mobileDetailTitle"),subtitle=document.getElementById("mobileDetailSubtitle"),orderDetail=state.tab==="orders"&&state.orderPane==="detail",accountDetail=["plan","channels","setup"].includes(state.tab),labels={retargeting:["Oportunidades","Ventas que vale la pena retomar"],plan:["Mi plan","Tu servicio y posibilidades de crecimiento"],channels:["Conectar canales","Dónde atenderá tu Nextfor"],setup:["Configuración","Afina cómo trabaja tu bot"],notifications:["Notificaciones","Avisos que necesitan tu atención"],tests:["Pruebas","Valida tu bot de forma segura"]},copy=orderDetail?["Detalle del pedido",""]:labels[state.tab],detail=!!copy;if(header)header.hidden=!detail;if(title)title.textContent=detail?copy[0]:"";if(subtitle){subtitle.textContent=detail?copy[1]:"";subtitle.hidden=!copy||!copy[1];}document.body.classList.toggle("mobile-detail-view",detail&&!accountDetail);document.body.classList.toggle("mobile-account-view",detail&&accountDetail);document.body.classList.toggle("order-mobile-detail",orderDetail);}
+function updateMobileDetailHeader(){var header=document.getElementById("mobileDetailHeader"),title=document.getElementById("mobileDetailTitle"),subtitle=document.getElementById("mobileDetailSubtitle"),orderDetail=state.tab==="orders"&&state.orderPane==="detail",accountDetail=["plan","channels","setup"].includes(state.tab),labels={retargeting:["Oportunidades","Ventas que vale la pena retomar"],plan:["Mi plan","Tu servicio y posibilidades de crecimiento"],channels:["Conectar canales","Dónde atenderá tu Nextfor"],setup:["Configuración","Afina cómo trabaja tu bot"],notifications:["Notificaciones","Avisos que necesitan tu atención"],tests:["Pruebas","Valida tu bot de forma segura"]},copy=orderDetail?["Detalle del pedido",""]:labels[state.tab],detail=!!copy;if(header)header.hidden=!detail;if(title)title.textContent=detail?copy[0]:"";if(subtitle){subtitle.textContent=detail?copy[1]:"";subtitle.hidden=!copy||!copy[1];}var primaryTabWithHeader=state.tab==="retargeting";document.body.classList.toggle("mobile-detail-view",detail&&!accountDetail&&!primaryTabWithHeader);document.body.classList.toggle("mobile-account-view",detail&&(accountDetail||primaryTabWithHeader));document.body.classList.toggle("order-mobile-detail",orderDetail);}
 function updateMobilePrimaryNav(){
   var home=document.getElementById("mnav-mobile-home"),chats=document.getElementById("mnav-mobile-chats"),orders=document.getElementById("mnav-orders"),sales=document.getElementById("mnav-retargeting"),profile=document.getElementById("mnav-mobile-profile"),modal=document.getElementById("profileModal");
   var appointmentChat=state.tab==="appointments"&&state.appointmentSection==="chats";
@@ -3242,7 +3482,7 @@ function showTab(name){
   text("pageSubtitle",pageSubtitle);
   if(window.innerWidth<=760&&name!=="appointments"){var activeMobileModule=document.getElementById("mobileModule-"+name);if(activeMobileModule)activeMobileModule.scrollIntoView({behavior:"smooth",block:"nearest",inline:"center"});}
   try{var url=new URL(location.href);url.searchParams.set("tab",name);url.searchParams.delete("channel");url.searchParams.delete("key");history.replaceState(null,"",url.pathname+url.search+url.hash);}catch(e){}
-  if(name==="orders")loadOrders(false);if(name==="channels")loadChannelConnections(false);if(name==="setup"){loadBotSetup();loadBotPersonality(false);}if(name==="notifications")renderNextforNotifications();if(name==="retargeting"){loadRetargeting(false);if(!DEMO_MODE&&!state.ordersLoading&&!state.orders.length)loadOrders(false);}if(name==="appointments")loadAppointments();renderInbox();renderPlan();renderMobileDashboard();updateMobilePrimaryNav();window.scrollTo(0,0);
+  if(name==="orders")loadOrders(false);if(name==="channels")loadChannelConnections(false);if(name==="setup"){loadBotSetup();loadBotPersonality(false);}if(name==="notifications"){renderNextforNotifications();loadNotificationEmailPreferences(false);}if(name==="retargeting"){loadRetargeting(false);if(!DEMO_MODE&&!state.ordersLoading&&!state.orders.length)loadOrders(false);}if(name==="appointments")loadAppointments();renderInbox();renderPlan();renderMobileDashboard();updateMobilePrimaryNav();window.scrollTo(0,0);resetMobileAccountViewport();
 }
 function mergeConversationPages(newer,older){var byId=new Map(),order=[];function add(item,isNewer){var key=conversationKey(item);if(!key)return;var current=byId.get(key);if(!current){byId.set(key,Object.assign({},item,{messages:(item.messages||[]).slice()}));order.push(key);return;}var primary=isNewer?item:current,secondary=isNewer?current:item,seen=new Set(),messages=[];((primary.messages||[]).concat(secondary.messages||[])).forEach(function(message){var messageKey=[message.ts||"",message.author||"",message.text||"",message.event||""].join("\u001f");if(seen.has(messageKey))return;seen.add(messageKey);messages.push(message);});messages.sort(function(a,b){return new Date(a.ts||0)-new Date(b.ts||0);});byId.set(key,Object.assign({},secondary,primary,{messages:messages}));} (newer||[]).forEach(function(item){add(item,true);});(older||[]).forEach(function(item){add(item,false);});return order.map(function(key){return byId.get(key);}).sort(function(a,b){return new Date(b.last_ts||0)-new Date(a.last_ts||0);});}
 function panelPagePath(before){var url=new URL(PANEL_DATA_PATH,location.origin);url.searchParams.set("limit","100");if(before)url.searchParams.set("before",before);else url.searchParams.delete("before");return url.pathname+url.search;}
@@ -3283,13 +3523,21 @@ function markNotificationReadLocally(id){if(!id||!state.notifications)return;(st
 function notificationAction(url,id){var target=notificationActionUrl(url);if(!target)return;if(id){markNotificationReadLocally(id);fetch("/admin/panel/notifications/"+encodeURIComponent(id)+"/read",{method:"POST",headers:{accept:"application/json","x-nextforia-panel-origin":location.origin},keepalive:true}).catch(function(){});}location.assign(target);}
 function notificationCardKey(event,card){if(event.key==="Enter"||event.key===" "){event.preventDefault();notificationAction(card&&card.dataset&&card.dataset.actionUrl,card&&card.dataset&&card.dataset.notificationId);}}
 function renderNextforNotifications(){var root=document.getElementById("nextforNotifications"),notifications=state.notifications||{},items=notifications.items||[],pending=Number(notifications.pending_count)||0,unread=Number(notifications.unread_count)||0;["navNotificationCount","mnavNotificationCount","mobileHeaderNotificationCount"].forEach(function(id){var el=document.getElementById(id);if(el){el.textContent=unread||"";el.style.display=unread?"grid":"none";}});if(!root)return;if(!items.length){root.innerHTML='<article class="notificationEmpty">No tienes notificaciones pendientes. Las nuevas citas, pedidos y solicitudes de ayuda aparecerán aquí inmediatamente.</article>';return;}root.innerHTML=items.map(function(item){var questions=(item.pending_questions||[]).slice(0,6).map(function(question){return '<span>'+esc(question.label||question.path)+'</span>';}).join(""),actionUrl=String(item.action_url||""),itemId=String(item.id||""),action=actionUrl?'<button class="primaryBtn" type="button" data-action-url="'+attr(actionUrl)+'" data-notification-id="'+attr(itemId)+'" onclick="event.stopPropagation();notificationAction(this.dataset.actionUrl,this.dataset.notificationId)">'+esc(item.action_label||"Abrir")+'</button>':'',high=item.priority==="high",liveType=["human_handoff_required","customer_order_created","appointment_created"].includes(item.type),unreadClass=liveType&&!item.read?" unread":"",clickAttrs=actionUrl?' clickable" role="button" tabindex="0" data-action-url="'+attr(actionUrl)+'" data-notification-id="'+attr(itemId)+'" onclick="notificationAction(this.dataset.actionUrl,this.dataset.notificationId)" onkeydown="notificationCardKey(event,this)':'"',icon=item.type==="human_handoff_required"?"🙋":(item.type==="customer_order_created"?"📦":(item.type==="appointment_created"?"📅":(high?PANEL_CHECK_ICON:"✧")));return '<article class="notificationCard '+(high?"high":"")+unreadClass+clickAttrs+'><span class="notificationIcon">'+icon+'</span><div class="notificationCopy"><h4>'+esc(item.title||"Notificación")+'</h4><p>'+esc(item.message||"")+'</p>'+(questions?'<div class="pendingQuestionList">'+questions+'</div>':"")+'</div><div>'+action+'</div></article>';}).join("");if(pending)renderPendingSetupReminder(pending);}
-function base64UrlBytes(value){var padding="=".repeat((4-value.length%4)%4),base64=(value+padding).replace(/-/g,"+").replace(/_/g,"/"),raw=atob(base64),bytes=new Uint8Array(raw.length);for(var i=0;i<raw.length;i+=1)bytes[i]=raw.charCodeAt(i);return bytes;}
+function base64UrlBytes(value){value=String(value||"").trim();var padding="=".repeat((4-value.length%4)%4),base64=(value+padding).replace(/-/g,"+").replace(/_/g,"/"),raw=atob(base64),bytes=new Uint8Array(raw.length);for(var i=0;i<raw.length;i+=1)bytes[i]=raw.charCodeAt(i);return bytes;}
+function notificationPublicKey(){var bytes=base64UrlBytes(state.notifications&&state.notifications.push_public_key);if(bytes.length!==65||bytes[0]!==4)throw new Error("push_public_key_invalid");return bytes;}
+function notificationActivationMessage(error){var code=String(error&&error.message||"");if(code==="notification_permission_denied"||error&&error.name==="NotAllowedError")return "Las notificaciones están bloqueadas. Permítelas en los ajustes del navegador e intenta de nuevo.";if(code==="web_push_not_configured"||error&&error.status===503)return "Las notificaciones todavía no están disponibles. Nextfor debe terminar su configuración segura.";if(code==="push_public_key_invalid"||error&&error.name==="InvalidAccessError")return "La configuración segura de notificaciones necesita actualizarse. Intenta nuevamente después de actualizar Nextfor.";if(code==="notifications_not_supported")return "Este navegador no permite notificaciones en segundo plano. En iPhone, instala Nextfor en la pantalla de inicio y ábrelo desde allí.";if(error&&error.status===401)return "Tu sesión venció. Inicia sesión nuevamente para activar este dispositivo.";if(error&&error.name==="AbortError")return "El navegador no pudo crear la suscripción. Verifica tu conexión e intenta nuevamente.";return "No pudimos activar este dispositivo. Revisa el permiso de notificaciones e intenta de nuevo.";}
 function notificationWebSupported(){return !DEMO_MODE&&"serviceWorker" in navigator&&"PushManager" in window&&"Notification" in window;}
 function ensureNotificationServiceWorker(){if(!notificationWebSupported())return Promise.reject(new Error("notifications_not_supported"));return navigator.serviceWorker.register("/admin/customer-notification-sw.js",{scope:"/admin/"}).then(function(){return navigator.serviceWorker.ready;});}
 function renderNotificationPushControls(){var controls=document.getElementById("notificationPushControls"),button=document.getElementById("notificationPushButton");if(!controls||!button)return;var available=!!(state.notifications&&state.notifications.push_available&&notificationWebSupported());controls.hidden=!available;if(!available)return;if(Notification.permission==="denied"){button.disabled=true;button.textContent="Bloqueadas";text("notificationPushStatus","Tu navegador bloqueó las notificaciones. Puedes habilitarlas desde los ajustes del sitio.");return;}ensureNotificationServiceWorker().then(function(registration){return registration.pushManager.getSubscription();}).then(function(subscription){button.disabled=false;button.textContent=subscription?"Notificaciones activas":"Activar notificaciones";text("notificationPushStatus",subscription?"Este dispositivo recibirá alertas de intervención humana.":"Actívalas para recibir avisos incluso con el panel en segundo plano.");}).catch(function(){button.disabled=false;});}
-function enablePhoneNotifications(){var button=document.getElementById("notificationPushButton");if(button){button.disabled=true;button.textContent="Activando…";}unlockNotificationAudio();Notification.requestPermission().then(function(permission){if(permission!=="granted")throw new Error("notification_permission_denied");return ensureNotificationServiceWorker();}).then(function(registration){return registration.pushManager.getSubscription().then(function(current){if(current)return current;return registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:base64UrlBytes(state.notifications.push_public_key)});});}).then(function(subscription){return api("/admin/panel/notifications/push-subscription",{method:"PUT",body:JSON.stringify({subscription:subscription.toJSON()})});}).then(function(){text("notificationPushStatus","Este dispositivo recibirá alertas de intervención humana.");if(button){button.disabled=false;button.textContent="Notificaciones activas";}}).catch(function(error){text("notificationPushStatus",error.message==="notification_permission_denied"?"Debes permitir las notificaciones desde el navegador.":"No pudimos activar este dispositivo. Intenta de nuevo.");if(button){button.disabled=false;button.textContent="Reintentar";}});}
+function renderNotificationEmailDisclosure(){var root=document.getElementById("notificationEmailSettings"),details=document.getElementById("notificationEmailDetails"),toggle=document.getElementById("notificationEmailToggle"),enabled=document.getElementById("notificationEmailEnabled"),expanded=state.notificationEmailExpanded===true,active=!!(enabled&&enabled.checked);if(!root||!details||!toggle)return;root.classList.toggle("expanded",expanded);root.classList.toggle("email-active",active);details.hidden=!expanded;toggle.setAttribute("aria-expanded",expanded?"true":"false");text("notificationEmailSummaryStatus",active?"Alertas activas":"Alertas apagadas");}
+function toggleNotificationEmailSettings(){state.notificationEmailExpanded=state.notificationEmailExpanded!==true;renderNotificationEmailDisclosure();}
+function previewNotificationEmailState(){var enabled=document.getElementById("notificationEmailEnabled"),active=!!(enabled&&enabled.checked);text("notificationEmailModeStatus",active?"Activadas":"Desactivadas");text("notificationEmailStatus",active?"Nextfor te avisará cuando ocurra alguno de estos momentos.":"Activa el correo para que Nextfor pueda avisarte.");renderNotificationEmailDisclosure();}
+function renderNotificationEmailPreferences(){var root=document.getElementById("notificationEmailSettings"),preferences=state.notificationEmailPreferences,enabled=document.getElementById("notificationEmailEnabled"),save=document.getElementById("notificationEmailSave");if(!root)return;if(!preferences||preferences.available!==true){root.hidden=true;return;}root.hidden=false;text("notificationEmailRecipient",preferences.recipient||"—");if(enabled)enabled.checked=preferences.enabled===true;if(state.notificationEmailExpanded===null)state.notificationEmailExpanded=preferences.enabled!==true;document.querySelectorAll("[data-notification-email-type]").forEach(function(input){input.checked=!preferences.types||preferences.types[input.dataset.notificationEmailType]!==false;});if(save)save.disabled=false;previewNotificationEmailState();}
+function loadNotificationEmailPreferences(force){if(DEMO_MODE){if(!state.notificationEmailPreferences)state.notificationEmailPreferences={available:true,recipient:"tu-correo@empresa.com",enabled:true,types:{payment_pending:true,shipping_pending:true,sales_opportunity:true,product_update:false,human_attention:true}};renderNotificationEmailPreferences();return;}if(state.notificationEmailLoading||(!force&&state.notificationEmailPreferences))return;state.notificationEmailLoading=true;api("/admin/panel/notifications/email-preferences",{redirectOnAuth:true}).then(function(result){state.notificationEmailPreferences=result.preferences||null;renderNotificationEmailPreferences();}).catch(function(error){var root=document.getElementById("notificationEmailSettings");if(root)root.hidden=true;if(error&&error.status!==403)text("notificationEmailStatus","No pudimos cargar tus alertas por correo.");}).finally(function(){state.notificationEmailLoading=false;});}
+function saveNotificationEmailPreferences(){var button=document.getElementById("notificationEmailSave"),enabled=document.getElementById("notificationEmailEnabled"),types={};if(DEMO_MODE){state.notificationEmailPreferences.enabled=!!(enabled&&enabled.checked);state.notificationEmailExpanded=false;renderNotificationEmailPreferences();panelToast("Vista de ejemplo: tus alertas quedaron configuradas.");return;}document.querySelectorAll("[data-notification-email-type]").forEach(function(input){types[input.dataset.notificationEmailType]=!!input.checked;});if(button){button.disabled=true;button.textContent="Guardando…";}text("notificationEmailStatus","Guardando tus alertas…");api("/admin/panel/notifications/email-preferences",{method:"PUT",body:JSON.stringify({enabled:!!(enabled&&enabled.checked),types:types})}).then(function(result){state.notificationEmailPreferences=result.preferences;state.notificationEmailExpanded=result.preferences&&result.preferences.enabled?false:true;renderNotificationEmailPreferences();panelToast(result.preferences&&result.preferences.enabled?"Tus alertas por correo están listas.":"Preferencias guardadas. No enviaremos correos hasta que las actives.");}).catch(function(error){text("notificationEmailStatus",error&&error.status===503?"Las alertas por correo todavía no están disponibles. Intenta más tarde.":"No pudimos guardar tus alertas. Intenta nuevamente.");}).finally(function(){if(button){button.disabled=false;button.textContent="Guardar mis alertas";}});}
+function enablePhoneNotifications(){var button=document.getElementById("notificationPushButton");if(button){button.disabled=true;button.textContent="Activando…";}unlockNotificationAudio();Notification.requestPermission().then(function(permission){if(permission!=="granted")throw new Error("notification_permission_denied");return ensureNotificationServiceWorker();}).then(function(registration){return registration.pushManager.getSubscription().then(function(current){if(current)return current;return registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:notificationPublicKey()});});}).then(function(subscription){return api("/admin/panel/notifications/push-subscription",{method:"PUT",body:JSON.stringify({subscription:subscription.toJSON()})});}).then(function(){text("notificationPushStatus","Este dispositivo recibirá alertas de intervención humana.");if(button){button.disabled=false;button.textContent="Notificaciones activas";}}).catch(function(error){text("notificationPushStatus",notificationActivationMessage(error));if(button){button.disabled=false;button.textContent="Reintentar";}});}
 function unlockNotificationAudio(){if(state.notificationAudio){if(state.notificationAudio.state==="suspended")state.notificationAudio.resume().catch(function(){});return;}try{var AudioContext=window.AudioContext||window.webkitAudioContext;if(!AudioContext)return;state.notificationAudio=new AudioContext();var oscillator=state.notificationAudio.createOscillator(),gain=state.notificationAudio.createGain();gain.gain.value=.00001;oscillator.connect(gain);gain.connect(state.notificationAudio.destination);oscillator.start();oscillator.stop(state.notificationAudio.currentTime+.02);}catch(_){}}
-function playNotificationSound(){unlockNotificationAudio();var context=state.notificationAudio;if(!context||context.state!=="running")return;[0,.17].forEach(function(delay,index){var oscillator=context.createOscillator(),gain=context.createGain(),start=context.currentTime+delay;oscillator.type="sine";oscillator.frequency.value=index?880:660;gain.gain.setValueAtTime(.0001,start);gain.gain.exponentialRampToValueAtTime(.18,start+.025);gain.gain.exponentialRampToValueAtTime(.0001,start+.22);oscillator.connect(gain);gain.connect(context.destination);oscillator.start(start);oscillator.stop(start+.24);});}
+function playNotificationSound(){unlockNotificationAudio();if(navigator.vibrate)try{navigator.vibrate([140,70,140]);}catch(_){}var context=state.notificationAudio;if(!context||context.state!=="running")return;[[0,660],[.16,880],[.32,1046]].forEach(function(step){var oscillator=context.createOscillator(),gain=context.createGain(),start=context.currentTime+step[0];oscillator.type="triangle";oscillator.frequency.value=step[1];gain.gain.setValueAtTime(.0001,start);gain.gain.exponentialRampToValueAtTime(.42,start+.02);gain.gain.exponentialRampToValueAtTime(.0001,start+.3);oscillator.connect(gain);gain.connect(context.destination);oscillator.start(start);oscillator.stop(start+.32);});}
 function showHandoffAlert(item){var toast=document.getElementById("handoffToast"),button=document.getElementById("handoffToastButton"),icon=toast&&toast.querySelector(".handoffToastIcon"),isOrder=item&&item.type==="customer_order_created",isAppointment=item&&item.type==="appointment_created";if(!toast||!button)return;text("handoffToastTitle",item.title||(isOrder?"Nuevo pedido por confirmar":isAppointment?"Nueva cita confirmada":"Un cliente necesita tu ayuda"));text("handoffToastMessage",item.message||(isOrder?"Abre el pedido para revisarlo.":isAppointment?"Abre la cita para revisarla.":"Abre la conversación para continuar."));if(icon)icon.textContent=isOrder?"📦":isAppointment?"📅":"🙋";button.textContent=item.action_label||(isOrder?"Ver pedido":isAppointment?"Ver cita":"Abrir chat");button.dataset.actionUrl=item.action_url||"";button.dataset.notificationId=item.id||"";toast.classList.add("show");playNotificationSound();setTimeout(function(){toast.classList.remove("show");},20000);if(document.hidden&&Notification.permission==="granted"&&!(state.notifications&&state.notifications.push_available)){ensureNotificationServiceWorker().then(function(registration){return registration.showNotification(item.title||"Nextfor necesita tu atención",{body:item.message||(isOrder?"Tienes un pedido nuevo listo para revisar.":isAppointment?"Tienes una cita nueva lista para revisar.":"Un cliente está esperando a tu equipo."),tag:isOrder?"nextfor-order-"+item.order_id:isAppointment?"nextfor-appointment-"+item.appointment_id:"nextfor-handoff-"+item.conversation_id,renotify:true,requireInteraction:true,data:{action_url:item.action_url,notification_id:item.id}});}).catch(function(){});}}
 function mergeLiveNotification(item){if(!item||!["human_handoff_required","customer_order_created","appointment_created"].includes(item.type))return;if(!state.notifications)state.notifications={count:0,unread_count:0,pending_count:0,pending_questions:[],items:[]};var items=state.notifications.items||[];if(items.some(function(existing){return existing.id===item.id;}))return;item.read=false;state.notifications.items=[item].concat(items);state.notifications.count=Number(state.notifications.count||0)+1;state.notifications.unread_count=Number(state.notifications.unread_count||0)+1;renderNextforNotifications();showHandoffAlert(item);if(item.type==="customer_order_created")loadOrders(true);if(item.type==="appointment_created"){state.appointments=null;loadAppointments();}loadPanelData(false);}
 function startNotificationStream(){if(DEMO_MODE||state.notificationStream||!("EventSource" in window))return;var stream=new EventSource("/admin/panel/notifications/events");state.notificationStream=stream;stream.addEventListener("notification",function(event){try{mergeLiveNotification(JSON.parse(event.data||"{}"));}catch(_){}});stream.onerror=function(){if(stream.readyState===EventSource.CLOSED)state.notificationStream=null;};}
@@ -3482,6 +3730,10 @@ function showNeedsYou(){state.filter="you";showTab("conversations");var item=sta
 function toggleConversationProfile(force){var open=typeof force==="boolean"?force:!document.body.classList.contains("profile-open");if(!findConversation(state.selected))open=false;document.body.classList.toggle("profile-open",open);var button=document.getElementById("chatCloseButton");if(button)button.setAttribute("aria-expanded",open?"true":"false");}
 function closeConversation(){closeEmojiPickers();state.selected=null;state.metaDirty=false;state.guidedFor=null;state.guidedDraft="";document.body.classList.remove("chat-open","profile-open");renderThreads();renderChat();window.scrollTo(0,0);}
 function closeMobileChat(){closeConversation();}
+function openConversationClearConfirm(){var item=findConversation(state.selected),modal=document.getElementById("conversationClearModal"),button=document.getElementById("conversationClearConfirmButton");if(!item||!modal||!SERVER_CAPABILITIES.clear_conversations)return;state.conversationClearKey=conversationKey(item);text("conversationClearCustomer",customerDisplay(item));if(button){button.disabled=false;button.textContent="Sí, vaciar chat";}modal.hidden=false;requestAnimationFrame(function(){if(button)button.focus();});}
+function closeConversationClearConfirm(){var modal=document.getElementById("conversationClearModal");if(modal)modal.hidden=true;state.conversationClearKey=null;}
+function removeClearedConversation(key){state.allConversations=state.allConversations.filter(function(item){return conversationKey(item)!==key;});if(state.data&&Array.isArray(state.data.conversations))state.data.conversations=state.data.conversations.filter(function(item){return conversationKey(item)!==key;});state.selected=null;state.metaDirty=false;state.guidedFor=null;state.guidedDraft="";applyChannelData();document.body.classList.remove("chat-open","profile-open");renderHeader();renderInbox();renderMobileDashboard();}
+function confirmConversationClear(){var key=state.conversationClearKey,item=findConversation(key),button=document.getElementById("conversationClearConfirmButton");if(!key||!item||!SERVER_CAPABILITIES.clear_conversations){closeConversationClearConfirm();return;}if(button){button.disabled=true;button.textContent="Vaciando…";}if(DEMO_MODE){removeClearedConversation(key);closeConversationClearConfirm();panelToast("Conversación vaciada en esta demo.");return;}api("/admin/panel/conversations/"+encodeURIComponent(key),{method:"DELETE",body:"{}"}).then(function(){removeClearedConversation(key);closeConversationClearConfirm();panelToast("Conversación vaciada. El perfil y los pedidos se conservaron.");loadPanelData(false);}).catch(function(error){if(button){button.disabled=false;button.textContent="Sí, vaciar chat";}panelToast((error.body&&error.body.message)||"No pudimos vaciar la conversación. Intenta de nuevo.",true);});}
 function aiUnderstanding(item){var tags=item&&item.tags||[],memory=item&&item.memory||{},value=((item&&item.last_text)||"").toLowerCase(),chips=[];if(tags.indexOf("garantia")>=0||/garant|reclamo|dañad|incomplet/.test(value))return {intent:"Reclamo o garantía — necesita seguimiento",chips:["Garantía","Prioridad"]};if(memory.purchase_stage==="confirmed_customer"){chips=["Cliente recurrente","Prioridad"];if((memory.interests||[])[0])chips.push(memory.interests[0]);return {intent:"Cliente con compra verificada — atender con contexto previo",chips:chips};}if(memory.purchase_stage==="payment_pending"||memory.purchase_stage==="order_handoff"){chips=["Cierre prioritario","Seguimiento"];if((memory.interests||[])[0])chips.push(memory.interests[0]);return {intent:"Proceso de compra avanzado — conviene dar seguimiento",chips:chips};}if(item&&item.priority==="high"){chips=["Prioridad","Intención de compra"];if((memory.interests||[])[0])chips.push(memory.interests[0]);return {intent:"Intención clara de compra detectada por la IA",chips:chips};}if(tags.indexOf("pendiente_pago")>=0||/pago|precio|descuento/.test(value))return {intent:"Consulta sobre pago o cierre de compra",chips:["Forma de pago","Seguimiento"]};if(tags.indexOf("envio")>=0||/env[ií]o|pedido|entrega/.test(value))return {intent:"Quiere confirmar envío o estado de pedido",chips:["Envío",channelLabelFor(item)]};if(tags.indexOf("venta")>=0||/compr|quiero|interesa|disponible|regalo/.test(value))return {intent:"Quiere comprar — la IA detectó una oportunidad",chips:["Oportunidad de venta",channelLabelFor(item)]};if(tags.indexOf("revisar")>=0)chips.push("Revisar");chips.push(channelLabelFor(item));return {intent:"Consulta general atendida por la IA",chips:chips};}
 function relationshipData(item){var memory=item&&item.memory||{},messages=(item.messages||[]).filter(function(message){return message.author!=="system";}).length,hasSale=(item.tags||[]).indexOf("venta")>=0;if(memory.purchase_stage==="confirmed_customer")return {eyebrow:"Cliente prioritario",value:"Recurrente",label:"compra verificada",copy:"La IA recuerda su contexto comercial para atenderlo de forma más personal."};if(item&&item.priority==="high")return {eyebrow:"Oportunidad prioritaria",value:"Alta",label:"intención de compra",copy:"La IA conservará el contexto útil y acompañará el proceso con mayor profundidad."};return hasSale?{eyebrow:"Oportunidad de relación",value:"Venta",label:"asistida por la IA",copy:"La IA entendió lo que busca y dejó el contexto listo para que tú cierres 🙌"}:{eyebrow:"Relación en construcción",value:messages,label:messages===1?"mensaje atendido":"mensajes atendidos",copy:"La IA conserva el contexto para que tu equipo no empiece desde cero."};}
 function customerNameInputs(){return [document.getElementById("customerProfileName"),document.getElementById("mobileCustomerProfileName")].filter(Boolean);}
@@ -3508,6 +3760,7 @@ function renderProfile(item,canMeta){
 function useSuggestedCustomerName(preferMobile){var item=findConversation(state.selected),input=document.getElementById(preferMobile?"mobileCustomerProfileName":"customerProfileName");if(!item||!input||!item.suggested_name)return;customerNameInputs().forEach(function(field){field.value=item.suggested_name;});markMetaDirty();input.focus();}
 function renderChat(){
   var item=findConversation(state.selected),canWrite=!!SERVER_CAPABILITIES.respond,canTake=!!SERVER_CAPABILITIES.intervene,canMeta=!!SERVER_CAPABILITIES.manage_notes_tags,guided=document.getElementById("guidedAction"),composer=document.getElementById("composer"),band=document.getElementById("stateBand"),control=document.getElementById("humanControl"),take=document.getElementById("takeControlBtn"),release=document.getElementById("releaseControlBtn"),reply=document.getElementById("replyText"),guidedReply=document.getElementById("guidedReply"),confirm=document.getElementById("confirmSendBtn"),already=document.getElementById("alreadyResolvedBtn"),pill=document.getElementById("chatStatusPill"),chatColumn=document.querySelector(".chatColumn"),messages=document.getElementById("messages"),aiButton=document.getElementById("handoffAiBtn"),humanButton=document.getElementById("handoffHumanBtn"),send=document.getElementById("sendCircleBtn"),sendFull=document.getElementById("sendBtn");
+  var trash=document.getElementById("conversationTrashButton");if(trash)trash.disabled=!item||!SERVER_CAPABILITIES.clear_conversations;
   renderProfile(item,canMeta);paintChannelBadge("chatChannelBadge",item,false);
   if(chatColumn){["channel-whatsapp","channel-instagram","channel-messenger","channel-email","channel-call"].forEach(function(name){chatColumn.classList.remove(name);});if(item)chatColumn.classList.add("channel-"+channelType(item));}
   if(!item){
@@ -3626,12 +3879,12 @@ window.addEventListener("focus",function(){
   },350);
 });
 ${appointmentClientScript}
-var reply=document.getElementById("replyText");if(reply)reply.addEventListener("keydown",conversationComposerKeydown);document.addEventListener("click",function(event){if(!event.target.closest(".emojiControl"))closeEmojiPickers();});document.addEventListener("keydown",function(event){if(event.key==="Escape")closeEmojiPickers();});var searchForm=document.getElementById("searchTestForm");if(searchForm)searchForm.addEventListener("submit",runProductTest);var orderForm=document.getElementById("orderTestForm");if(orderForm)orderForm.addEventListener("submit",runOrderTest);
+var reply=document.getElementById("replyText");if(reply)reply.addEventListener("keydown",conversationComposerKeydown);document.addEventListener("click",function(event){if(!event.target.closest(".emojiControl"))closeEmojiPickers();});document.addEventListener("keydown",function(event){if(event.key==="Escape"){closeEmojiPickers();closeConversationClearConfirm();}});var searchForm=document.getElementById("searchTestForm");if(searchForm)searchForm.addEventListener("submit",runProductTest);var orderForm=document.getElementById("orderTestForm");if(orderForm)orderForm.addEventListener("submit",runOrderTest);
 document.addEventListener("pointerdown",unlockNotificationAudio,{once:true});
 try{var initialView=new URL(location.href).searchParams.get("view");if(["agenda","chats","reminders"].includes(initialView))state.appointmentSection=initialView;}catch(e){}
 function panelNeedsLiveRefresh(){return !document.hidden&&["summary","conversations"].includes(state.tab)&&!state.metaDirty;}
 document.addEventListener("visibilitychange",function(){if(panelNeedsLiveRefresh()&&Date.now()-state.lastPanelLoadedAt>=120000)loadPanelData(false);});
-renderChannelStrips();setupSummaryCustomization();showTab(INITIAL_TAB);loadBotSetup();loadClientOnboardingSummary();loadPanelData(false);loadPanelHealth();startNotificationStream();if(INITIAL_TAB==="plan")loadBilling(false);setInterval(function(){if(!DEMO_MODE&&panelNeedsLiveRefresh())loadPanelData(false);},120000);setInterval(function(){if(!document.hidden)loadPanelHealth();},300000);
+renderChannelStrips();setupSummaryCustomization();showTab(INITIAL_TAB);loadBotSetup();loadClientOnboardingSummary();loadPanelData(false);loadPanelHealth();startNotificationStream();if(INITIAL_TAB==="plan")loadBilling(false);setInterval(function(){if(!DEMO_MODE&&panelNeedsLiveRefresh())loadPanelData(false);},120000);setInterval(function(){if(!document.hidden)loadPanelHealth();},300000);setupPwa();
 </script>
 </body>
 </html>`);

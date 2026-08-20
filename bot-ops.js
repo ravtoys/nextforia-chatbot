@@ -11,6 +11,14 @@ const STATUS = Object.freeze({
 
 const SEVERITY_ORDER = Object.freeze({ opportunity: 1, attention: 2, critical: 3 });
 const OPEN_STATUSES = new Set(["open", "approval_pending"]);
+const REPORT_REASON_TITLES = Object.freeze({
+  respuesta_incorrecta: "El cliente reporto una respuesta incorrecta del bot",
+  no_entendio: "El cliente reporto que el bot no entendio la consulta",
+  no_respondio: "El cliente reporto que el bot dejo de responder",
+  tono: "El cliente reporto un problema de tono del bot",
+  otro: "El cliente reporto una falla del bot"
+});
+
 const HANDOFF_RESOLUTION_TOOLS = new Set(["admin_takeover", "admin_send_message", "admin_release", "admin_resolve"]);
 const APPOINTMENT_TOOLS = new Set([
   "check_appointment_availability",
@@ -539,6 +547,9 @@ function publicFinding(row) {
     detail: row.detail,
     recommendation: row.recommendation,
     requires_approval: row.requires_approval === true,
+    // Sin esto el Super Admin ve "un cliente reporto algo" y no puede ubicar
+    // que conversacion fue. Campo aditivo: nadie que ya consumia esto se rompe.
+    conversation_key: row.conversation_key || null,
     first_seen_at: row.first_seen_at,
     last_seen_at: row.last_seen_at,
     occurrence_count: Number(row.occurrence_count || 1)
@@ -824,9 +835,89 @@ function createBotOpsService(options) {
     return { ok: true, checked_at: date.toISOString(), time_zone: timeZone, results };
   }
 
+  // Reporte manual que hace el cliente desde el Customer Panel.
+  // No pasa por el analizador diario a proposito: si alguien se toma el trabajo
+  // de reportar un bug, tiene que aparecer en la bandeja de operacion en el
+  // momento, no 24 horas despues.
+  //
+  // El evento se guarda siempre; el finding es lo que le da visibilidad
+  // inmediata al Super Admin. Si la escritura del finding falla (por ejemplo
+  // porque la base exige run_id), el reporte NO se pierde: queda como evento y
+  // la corrida diaria lo recoge. Por eso el evento va primero.
+  async function reportIssue(input) {
+    input = input || {};
+    const tenantId = slug(input.tenant_id, "unknown-tenant");
+    const channel = slug(input.channel, "unknown");
+    const botId = slug(input.bot_id, "unknown-bot");
+    const conversationKey = text(input.conversation_key, 80) || null;
+    const reason = slug(input.reason, "otro");
+    const note = text(input.note, 1000);
+    const reportedBy = text(input.reported_by, 200);
+    const occurredAt = iso(input.occurred_at, clock().toISOString());
+    const evidence = {
+      source_type: "customer_report",
+      analysis_tier: "customer_reported",
+      reason,
+      note,
+      reported_by: reportedBy,
+      bot_version: text(input.bot_version, 120),
+      customer_message: text(input.customer_message, 500),
+      bot_reply: text(input.bot_reply, 500)
+    };
+
+    const event = await recordEvent({
+      tenant_id: tenantId,
+      channel,
+      event_type: "customer_bug_report",
+      conversation_key: conversationKey,
+      occurred_at: occurredAt,
+      payload: Object.assign({ bot_id: botId }, evidence)
+    }).catch(function (error) {
+      log("bot-ops customer report event failed", error && error.message);
+      return null;
+    });
+
+    const finding = {
+      dedupe_key: [tenantId, botId, channel, "customer_reported", conversationKey || hash(reason + occurredAt), reason].join(":"),
+      tenant_id: tenantId,
+      bot_id: botId,
+      channel,
+      category: "customer_reported",
+      severity: "attention",
+      status: "open",
+      title: text(REPORT_REASON_TITLES[reason] || REPORT_REASON_TITLES.otro, 180),
+      detail: note || "El cliente reporto una falla del bot desde el Customer Panel sin detalle adicional.",
+      recommendation: "Revisar la conversacion reportada y confirmarle al cliente que se corrigio.",
+      requires_approval: false,
+      conversation_key: conversationKey,
+      source_event_id: event && event.event_id || null,
+      occurred_at: occurredAt,
+      evidence,
+      safe_action: "human_attention"
+    };
+
+    let stored = null;
+    let findingError = null;
+    try {
+      stored = await store.upsertFinding(finding, null);
+    } catch (error) {
+      findingError = error && error.message || "finding_write_failed";
+      log("bot-ops customer report finding failed", findingError);
+    }
+
+    return {
+      ok: !!(event || stored),
+      event_recorded: !!event,
+      finding_recorded: !!stored,
+      finding_error: findingError,
+      finding: stored || null
+    };
+  }
+
   return {
     assertReady: function () { return store.assertReady(); },
     recordEvent,
+    reportIssue,
     runDaily,
     runWeekly,
     runDue,

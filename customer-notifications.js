@@ -129,6 +129,7 @@ function createCustomerNotificationService(options) {
   options = options || {};
   const store = options.store || new InMemoryCustomerNotificationStore();
   const pushSender = options.pushSender || null;
+  const emailDelivery = options.emailDelivery || null;
   const events = options.events || new EventEmitter();
   events.setMaxListeners(500);
 
@@ -200,6 +201,11 @@ function createCustomerNotificationService(options) {
     deliverPush(notification).catch(function (error) {
       if (typeof options.onError === "function") options.onError(error, notification, null);
     });
+    if (emailDelivery && typeof emailDelivery.scheduleNotification === "function") {
+      emailDelivery.scheduleNotification(notification).catch(function (error) {
+        if (typeof options.onError === "function") options.onError(error, notification, null);
+      });
+    }
     return notification;
   }
 
@@ -289,7 +295,8 @@ function createCustomerNotificationService(options) {
     subscribe,
     unsubscribe,
     unsubscribeActor,
-    pushAvailable: !!pushSender
+    pushAvailable: !!pushSender,
+    emailAvailable: !!(emailDelivery && emailDelivery.available)
   };
 }
 

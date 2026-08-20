@@ -10,8 +10,13 @@ const {
 (async function run() {
   const store = new InMemoryCustomerNotificationStore();
   const pushes = [];
+  const emails = [];
   const service = createCustomerNotificationService({
     store,
+    emailDelivery: {
+      available: true,
+      scheduleNotification: async function (notification) { emails.push(notification.id); }
+    },
     pushSender: {
       send: async function (subscription, payload) {
         pushes.push({ subscription, payload });
@@ -47,6 +52,7 @@ const {
   assert.strictEqual(eventsB.length, 0);
   assert.strictEqual(pushes.length, 1);
   assert.strictEqual(pushes[0].subscription.endpoint, "https://push.example/subscription-a");
+  assert.deepStrictEqual(emails, ["handoff-a-1"]);
 
   const orderStore = new InMemoryCustomerNotificationStore();
   const orderPushes = [];
@@ -127,6 +133,7 @@ const {
   assert.strictEqual(duplicate.id, "handoff-a-1");
   assert.strictEqual(eventsA.length, 1, "a replay must not alert twice");
   assert.strictEqual(pushes.length, 1, "a replay must not push twice");
+  assert.deepStrictEqual(emails, ["handoff-a-1"], "a replay must not email twice");
 
   let list = await service.list("tenant-a", "admin-a", 20);
   assert.strictEqual(list.count, 1);

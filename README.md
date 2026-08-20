@@ -93,12 +93,17 @@ Plataforma multi-tenant de NextforIA para atención al cliente y agendamiento po
 | `SUPABASE_TENANT_COLUMNS_ENABLED` | Debe ser `1` fuera de desarrollo; producción fuerza escritura y filtrado por `tenant_id` para evitar mezclar clientes |
 | `CUSTOMER_ACCESS_V2_ENABLED` | Gate del alta multi-cliente; debe permanecer `0` en producción hasta aprobación explícita |
 | `CHANNEL_CONNECTIONS_V1_ENABLED` | Gate de la pantalla simple de conexiones: WhatsApp primero, Instagram opcional; solo Staging hasta aprobación explícita |
+| `PWA_V1_ENABLED` | Habilita manifest, instalación y modo standalone del Customer Panel; con `0` el panel normal no ofrece la PWA |
 | `CHANNEL_CONNECTIONS_DEDICATED_STORE_ENABLED` | Habilita el almacén Supabase atómico exigido por WhatsApp; solo usar tras la migración v2, drenado del fleet anterior y preflight de propietarios |
 | `CUSTOMER_PANEL_BASE_URL` | Origen HTTPS de Staging usado únicamente dentro del correo de invitación |
 | `CUSTOMER_INVITE_TTL_HOURS` | Vigencia de la invitación privada (default `24`, máximo `168`) |
 | `CUSTOMER_ACCESS_EMAIL_PROVIDER` | Proveedor del correo de invitación; v2 requiere `resend` fuera de tests |
-| `CUSTOMER_INVITE_FROM_EMAIL` | Remitente verificado del entorno de Staging |
+| `CUSTOMER_INVITE_REPLY_TO` | Dirección de respuesta; por defecto `info@nextforia.com` |
 | `RESEND_API_KEY` | API key exclusiva de Staging para entregar invitaciones; nunca se registra ni se devuelve |
+| `SETUP_EMAIL_JOURNEY_ENABLED` | Activa los cinco correos del setup después de aplicar `20260815_setup_email_journey_up.sql` |
+| `SETUP_EMAIL_INCOMPLETE_DELAY_MINUTES` | Espera antes de recordar un entrenamiento incompleto (default `120`) |
+| `SETUP_EMAIL_PAYMENT_DELAY_MINUTES` | Espera antes de recordar un pago pendiente (default `120`) |
+| `CUSTOMER_NOTIFICATION_EMAIL_ENABLED` | Permite que cada usuario active desde Customer Panel sus correos operativos; exige Customer Access v2, Supabase, Resend y la migración `20260820_customer_notification_emails_up.sql` |
 | `CUSTOMER_ALL_PLANS_ENABLED` | Expone Uno, Aura, Tempo y Atlas en el setup de clientes; activo por defecto, `0` sirve como rollback |
 | `APPOINTMENT_SETUP_ENABLED` | Gate heredado para pilotos de Appointment cuando `CUSTOMER_ALL_PLANS_ENABLED=0` |
 | `ELEVENLABS_WEBHOOK_SECRET` | Secreto HMAC del webhook post-conversación de ElevenLabs |

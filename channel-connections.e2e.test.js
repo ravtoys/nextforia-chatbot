@@ -201,8 +201,13 @@ function renderConnectionHubForOnboarding(panel, onboarding) {
     assert(panel.includes("/admin/panel/channel-connections/whatsapp/attempt"));
     assert(!panel.includes("/admin/panel/channel-connections/whatsapp/activate"));
     assert(!panel.includes("activateWhatsApp("));
-    assert(panel.includes("if(channel===\"whatsapp\"&&(state.whatsappConnecting||state.whatsappEmbedded))return"));
-    assert(panel.includes('extras:config.onboarding_mode==="coexistence"'));
+    assert(panel.includes("if(state.whatsappLaunch||state.whatsappEmbedded||state.whatsappConnecting)return"));
+    assert(panel.includes('if(channel==="whatsapp"){prepareWhatsAppConnection(onboardingMode);return;}'));
+    assert(panel.includes("extras:whatsappLoginExtras(config)"));
+    assert(panel.includes('return config.onboarding_mode==="coexistence"'));
+    assert(panel.includes("function openWhatsAppMetaWindow()"));
+    assert(panel.includes("Abrir Meta y elegir mi número"));
+    assert(panel.includes("function preloadMetaSdk()"));
     assert(panel.includes('sessionInfoVersion:"3"'));
     assert(panel.includes('features:[{name:"app_only_install"}]'));
     assert(panel.includes('"FINISH_ONLY_WABA"'));

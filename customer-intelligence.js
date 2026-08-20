@@ -66,13 +66,16 @@ function normalizeMemory(memory) {
     source_signals: normalizeList(value.source_signals, 8, 60),
     last_purchase_intent_at: value.last_purchase_intent_at || null,
     last_purchase_at: value.last_purchase_at || null,
+    // Confirmacion de zona de servicio: persiste para no volver a preguntarla tras un reinicio.
+    service_area_status: ["inside", "outside"].includes(value.service_area_status) ? value.service_area_status : null,
+    service_area_country: /^[A-Za-z]{2}$/.test(String(value.service_area_country || "")) ? String(value.service_area_country).toUpperCase() : null,
     updated_at: value.updated_at || null
   };
 }
 
 function isMeaningfulMemory(memory) {
   const value = normalizeMemory(memory);
-  return value.purchase_stage !== "none" || !!value.preferred_name || value.interests.length > 0 || value.confirmed_orders.length > 0;
+  return value.purchase_stage !== "none" || !!value.preferred_name || value.interests.length > 0 || value.confirmed_orders.length > 0 || !!value.service_area_status;
 }
 
 function memoryFingerprint(memory) {
