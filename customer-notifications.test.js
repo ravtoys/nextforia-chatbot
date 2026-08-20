@@ -93,6 +93,31 @@ const {
   assert.strictEqual(orderEventsA.length, 1, "an order replay must not alert twice");
   assert.strictEqual(orderPushes.length, 1, "an order replay must not push twice");
 
+  const appointmentCreated = await orderService.createAppointment({
+    id: "appointment-notification-a-1",
+    tenant_id: "tenant-a",
+    appointment_id: "appointment-a-1001",
+    conversation_id: "wa:573010000001",
+    channel: "whatsapp",
+    customer_label: "Cliente cita A"
+  });
+  await new Promise(function (resolve) { setImmediate(resolve); });
+  assert.strictEqual(appointmentCreated.type, "appointment_created");
+  assert.strictEqual(appointmentCreated.action_url, "/admin/panel?tab=appointments&appointment=appointment-a-1001");
+  assert.strictEqual(appointmentCreated.action_label, "Ver cita");
+  assert.strictEqual(orderEventsA.length, 2);
+  assert.strictEqual(orderEventsB.length, 0);
+  assert.strictEqual(orderPushes.length, 2);
+  assert.strictEqual(orderPushes[1].payload.tag, "nextfor-appointment-appointment-a-1001");
+  await orderService.createAppointment({
+    id: "appointment-notification-a-1",
+    tenant_id: "tenant-a",
+    appointment_id: "appointment-a-1001"
+  });
+  await new Promise(function (resolve) { setImmediate(resolve); });
+  assert.strictEqual(orderEventsA.length, 2, "an appointment replay must not alert twice");
+  assert.strictEqual(orderPushes.length, 2, "an appointment replay must not push twice");
+
   const duplicate = await service.createHandoff({
     id: "handoff-a-1",
     tenant_id: "tenant-a",
@@ -150,6 +175,9 @@ const {
   assert.throws(function () {
     normalizeNotification({ type: "customer_order_created", tenant_id: "tenant-a", order_id: "" });
   }, /notification_order_required/);
+  assert.throws(function () {
+    normalizeNotification({ type: "appointment_created", tenant_id: "tenant-a", appointment_id: "" });
+  }, /notification_appointment_required/);
 
   console.log("customer-notifications.test.js OK");
 })().catch(function (error) {

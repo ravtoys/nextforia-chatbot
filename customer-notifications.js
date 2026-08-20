@@ -22,14 +22,16 @@ function actor(value) {
 function normalizeNotification(input) {
   input = input || {};
   const tenantId = tenant(input.tenant_id);
-  const type = ["human_handoff_required", "customer_order_created"].includes(text(input.type, 80))
+  const type = ["human_handoff_required", "customer_order_created", "appointment_created"].includes(text(input.type, 80))
     ? text(input.type, 80)
     : "human_handoff_required";
   const conversationId = text(input.conversation_id, 500);
   const orderId = text(input.order_id, 120);
+  const appointmentId = text(input.appointment_id, 160);
   if (!tenantId) throw new Error("notification_tenant_required");
   if (type === "human_handoff_required" && !conversationId) throw new Error("notification_conversation_required");
   if (type === "customer_order_created" && !orderId) throw new Error("notification_order_required");
+  if (type === "appointment_created" && !appointmentId) throw new Error("notification_appointment_required");
   const id = text(input.id, 120) || crypto.randomUUID();
   const createdAt = text(input.created_at, 80) || new Date().toISOString();
   const channel = ["whatsapp", "instagram", "messenger", "email"].includes(text(input.channel, 30).toLowerCase())
@@ -43,15 +45,18 @@ function normalizeNotification(input) {
     priority: "high",
     conversation_id: conversationId,
     order_id: orderId,
+    appointment_id: appointmentId,
     channel,
     customer_label: text(input.customer_label, 160) || "Un cliente",
     reason: text(input.reason, 240) || "solicitud_cliente",
-    title: text(input.title, 160) || (type === "customer_order_created" ? "Nuevo pedido por confirmar" : "Un cliente necesita tu ayuda"),
-    message: text(input.message, 500) || (type === "customer_order_created" ? "Tu equipo tiene un pedido nuevo listo para revisar." : "La IA pausó esta conversación para que tu equipo pueda continuar."),
-    action_label: text(input.action_label, 80) || (type === "customer_order_created" ? "Ver pedido" : "Abrir conversación"),
+    title: text(input.title, 160) || (type === "customer_order_created" ? "Nuevo pedido por confirmar" : type === "appointment_created" ? "Nueva cita confirmada" : "Un cliente necesita tu ayuda"),
+    message: text(input.message, 500) || (type === "customer_order_created" ? "Tu equipo tiene un pedido nuevo listo para revisar." : type === "appointment_created" ? "Tu Nextfor confirmó una cita y la dejó lista en la agenda." : "La IA pausó esta conversación para que tu equipo pueda continuar."),
+    action_label: text(input.action_label, 80) || (type === "customer_order_created" ? "Ver pedido" : type === "appointment_created" ? "Ver cita" : "Abrir conversación"),
     action_url: type === "customer_order_created"
       ? "/admin/panel?tab=orders&order=" + encodeURIComponent(orderId)
-      : "/admin/panel?tab=conversations&conversation=" + encodeURIComponent(conversationId),
+      : type === "appointment_created"
+        ? "/admin/panel?tab=appointments&appointment=" + encodeURIComponent(appointmentId)
+        : "/admin/panel?tab=conversations&conversation=" + encodeURIComponent(conversationId),
     created_at: createdAt
   };
 }
@@ -166,6 +171,8 @@ function createCustomerNotificationService(options) {
           action_url: notification.action_url,
           tag: notification.type === "customer_order_created"
             ? "nextfor-order-" + notification.order_id
+            : notification.type === "appointment_created"
+              ? "nextfor-appointment-" + notification.appointment_id
             : "nextfor-handoff-" + notification.conversation_id
         });
         delivered += 1;
@@ -202,6 +209,10 @@ function createCustomerNotificationService(options) {
 
   async function createOrder(input) {
     return createNotification(Object.assign({}, input, { type: "customer_order_created" }));
+  }
+
+  async function createAppointment(input) {
+    return createNotification(Object.assign({}, input, { type: "appointment_created" }));
   }
 
   async function markRead(tenantId, actorId, notificationId) {
@@ -272,6 +283,7 @@ function createCustomerNotificationService(options) {
     events,
     createHandoff,
     createOrder,
+    createAppointment,
     list,
     markRead,
     subscribe,

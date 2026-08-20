@@ -5689,6 +5689,67 @@ function customerOrderNotificationId(tenantId, orderId) {
     .digest("hex").slice(0, 40);
 }
 
+function customerAppointmentNotificationId(tenantId, appointment) {
+  return "appointment-" + crypto.createHash("sha256")
+    .update([
+      cleanTenantId(tenantId),
+      cleanRuntimeText(appointment && appointment.conversation_id, 160),
+      cleanRuntimeText(appointment && appointment.status, 40)
+    ].join("\u001f"))
+    .digest("hex").slice(0, 40);
+}
+
+function appointmentNotificationWhen(startsAt) {
+  const date = new Date(startsAt);
+  if (!Number.isFinite(date.getTime())) return "horario por confirmar";
+  try {
+    return new Intl.DateTimeFormat("es-CO", {
+      timeZone: "America/Bogota",
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      hour: "2-digit",
+      minute: "2-digit"
+    }).format(date);
+  } catch (_) {
+    return date.toISOString();
+  }
+}
+
+async function queueCustomerAppointmentNotification(tenantId, appointment) {
+  const cleanTenant = cleanTenantId(tenantId);
+  const appointmentId = cleanRuntimeText(appointment && appointment.conversation_id, 160);
+  if (!cleanTenant || !appointmentId) return null;
+  const customerName = cleanRuntimeText(appointment && appointment.customer_name, 160) || "Un cliente";
+  try {
+    const notification = await customerNotificationService.createAppointment({
+      id: customerAppointmentNotificationId(cleanTenant, appointment),
+      tenant_id: cleanTenant,
+      appointment_id: appointmentId,
+      conversation_id: appointmentId,
+      channel: cleanChannel(appointment && appointment.channel) || "whatsapp",
+      customer_label: customerName,
+      title: appointment && appointment.status === "rescheduled" ? "Cita reprogramada" : "Nueva cita confirmada",
+      message: customerName + " tiene una cita para " + appointmentNotificationWhen(appointment && appointment.starts_at) + ".",
+      created_at: appointment && appointment.updated_at
+    });
+    log("info", "appointment_notification_created", {
+      tenant_id: cleanTenant,
+      appointment_id_suffix: appointmentId.slice(-12),
+      notification_id_suffix: String(notification && notification.id || "").slice(-12),
+      status: appointment && appointment.status || "booked"
+    });
+    return notification;
+  } catch (error) {
+    log("error", "appointment_notification_failed", {
+      tenant_id: cleanTenant,
+      appointment_id_suffix: appointmentId.slice(-12),
+      error: cleanRuntimeText(error && error.message, 180) || "notification_store_unavailable"
+    });
+    throw error;
+  }
+}
+
 async function queueCustomerOrderNotification(tenantId, order) {
   const cleanTenant = cleanTenantId(tenantId);
   if (!cleanTenant || !order || !order.id) return null;
@@ -6066,6 +6127,10 @@ async function executeBookAppointment(userId, tenantId, input, actor) {
     }), false);
   }
   await persistAppointment(row);
+  let notification = null;
+  if (row.status === "booked") {
+    notification = await queueCustomerAppointmentNotification(tenantId, row);
+  }
   return {
     ok: row.status === "booked" && row.calendar_sync_status === "synced",
     appointment_id: row.conversation_id,
@@ -6073,6 +6138,7 @@ async function executeBookAppointment(userId, tenantId, input, actor) {
     starts_at: row.starts_at,
     duration_minutes: row.duration_minutes,
     calendar_sync_status: row.calendar_sync_status || "pending",
+    notification_id: notification && notification.id || null,
     error: row.calendar_sync_status === "synced" ? undefined : row.calendar_last_error || "calendar_sync_pending"
   };
 }
@@ -7972,7 +8038,12 @@ async function receiveElevenLabsPostCallWebhook(req, res) {
     if (appointment && ["booked", "rescheduled"].includes(appointment.status) && appointment.starts_at) {
       appointment = await applyAppointmentCalendarEffect(appointment, "sync", "elevenlabs_post_call");
     }
-    if (appointment) await persistAppointment(appointment);
+    if (appointment) {
+      await persistAppointment(appointment);
+      if (["booked", "rescheduled"].includes(appointment.status)) {
+        await queueCustomerAppointmentNotification(tenantId, appointment);
+      }
+    }
     await recordBotOpsEvent({
       tenant_id: tenantId,
       bot_id: "appointments",
@@ -17844,6 +17915,7 @@ app.get("/admin/panel", async (req, res) => {
     initialTab,
     initialConversation: normalizeConversationUserId(req.query.conversation),
     initialOrder: String(req.query.order || "").trim().slice(0, 120),
+    initialAppointment: String(req.query.appointment || "").trim().slice(0, 160),
     tenantContext: panelBusinessContext,
     customerSetupCompleted,
     paymentsV1Enabled: PAYMENTS_V1_ENABLED,
@@ -17868,6 +17940,7 @@ app.get("/admin/panel-demo", (req, res) => {
     demoMode: true,
     initialTab,
     initialOrder: String(req.query.order || "").trim().slice(0, 120),
+    initialAppointment: String(req.query.appointment || "").trim().slice(0, 160),
     tenantContext: {
       id: "nextfor-aura-demo",
       company_name: "Comercio piloto",

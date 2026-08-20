@@ -173,6 +173,15 @@ function elevenLabsSignature(body, secret, timestamp) {
     assert.strictEqual(customerData.tenant_id, "grupo-derco");
     assert.strictEqual(customerData.appointments[0].ui_status, "confirmed");
 
+    response = await fetch(base + "/admin/panel/notifications", { headers: { cookie: customerCookie } });
+    assert.strictEqual(response.status, 200, "Appointment customer should receive its booking notification");
+    const appointmentNotifications = await response.json();
+    assert.strictEqual(appointmentNotifications.count, 1);
+    assert.strictEqual(appointmentNotifications.items[0].type, "appointment_created");
+    assert.strictEqual(appointmentNotifications.items[0].tenant_id, "grupo-derco");
+    assert.strictEqual(appointmentNotifications.items[0].appointment_id, "conv_e2e_001");
+    assert.strictEqual(appointmentNotifications.items[0].action_url, "/admin/panel?tab=appointments&appointment=conv_e2e_001");
+
     response = await fetch(base + "/admin/panel/appointments/action", {
       method: "POST",
       headers: { "content-type": "application/json", cookie: customerCookie, origin: base },
