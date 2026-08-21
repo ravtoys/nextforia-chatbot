@@ -40,6 +40,16 @@ function cleanDurationMinutes(value) {
   return Number.isFinite(minutes) && minutes >= 5 && minutes <= 24 * 60 ? minutes : 60;
 }
 
+function appointmentCustomerPhone(channel, conversationIdentity, requestedPhone) {
+  if (cleanText(channel, 40).toLowerCase() === "whatsapp") {
+    const channelDigits = cleanText(conversationIdentity, 100)
+      .replace(/^wa:/i, "")
+      .replace(/\D/g, "");
+    if (channelDigits.length >= 8 && channelDigits.length <= 15) return "+" + channelDigits;
+  }
+  return cleanText(requestedPhone, 80);
+}
+
 function cleanReminderDeliveries(input) {
   const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
   const result = {};
@@ -253,6 +263,7 @@ module.exports = {
   APPOINTMENT_STATUSES,
   AppointmentRegistry,
   appointmentFromElevenLabsEvent,
+  appointmentCustomerPhone,
   normalizeAppointment,
   validAppointmentAction,
   cleanReminderDeliveries

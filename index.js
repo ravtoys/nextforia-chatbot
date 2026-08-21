@@ -198,7 +198,7 @@ const {
 } = require("./retargeting");
 const { CommerceRegistry, createShopifyAdapter } = require("./commerce");
 const { cleanShopifyShop, createPairingToken, verifyPairingToken } = require("./commerce/pairing-token");
-const { AppointmentRegistry } = require("./appointments");
+const { AppointmentRegistry, appointmentCustomerPhone } = require("./appointments");
 const {
   buildAppointmentIntegrations,
   parseAppointmentCalendarTenantMap
@@ -6521,8 +6521,11 @@ async function executeBookAppointment(userId, tenantId, input, actor) {
     starts_at: startsAt.toISOString(),
     duration_minutes: durationMinutes,
     customer_name: cleanRuntimeText(input && input.customer_name, 160),
-    customer_phone: cleanRuntimeText(input && input.customer_phone, 80) ||
-      (bookingChannel === "whatsapp" ? conversationExternalId(userId) : ""),
+    customer_phone: appointmentCustomerPhone(
+      bookingChannel,
+      userId,
+      cleanRuntimeText(input && input.customer_phone, 80)
+    ),
     customer_email: cleanRuntimeText(input && input.customer_email, 200).toLowerCase(),
     consultation_reason: cleanRuntimeText(input && input.consultation_reason, 1000),
     data_processing_consent: "authorized",

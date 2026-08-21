@@ -1,7 +1,7 @@
 "use strict";
 
 const assert = require("assert");
-const { AppointmentRegistry, appointmentFromElevenLabsEvent } = require("./appointments");
+const { AppointmentRegistry, appointmentCustomerPhone, appointmentFromElevenLabsEvent } = require("./appointments");
 const { DERCO_TENANT_ID, getRegisteredClient, listRegisteredClients, parseAgentTenantMap } = require("./client-registry");
 
 function sampleEvent(overrides) {
@@ -30,6 +30,13 @@ function sampleEvent(overrides) {
 }
 
 (async function run() {
+  assert.equal(
+    appointmentCustomerPhone("whatsapp", "wa:573013507371", "+573000000000"),
+    "+573013507371",
+    "WhatsApp bookings must use the real channel identity instead of a model-supplied placeholder"
+  );
+  assert.equal(appointmentCustomerPhone("voice", "voice:caller", "+573009998888"), "+573009998888");
+
   assert.equal(listRegisteredClients().length, 1);
   assert.equal(getRegisteredClient(DERCO_TENANT_ID).customer_number, 1);
   assert.equal(getRegisteredClient(DERCO_TENANT_ID).brand_name, "Grupo Jurídico DERCO S.A.S.");
