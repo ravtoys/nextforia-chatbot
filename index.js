@@ -199,6 +199,7 @@ const {
 const { CommerceRegistry, createShopifyAdapter } = require("./commerce");
 const { cleanShopifyShop, createPairingToken, verifyPairingToken } = require("./commerce/pairing-token");
 const { AppointmentRegistry, appointmentCustomerPhone } = require("./appointments");
+const { deliverAppointmentWhatsApp } = require("./appointment-whatsapp-delivery");
 const {
   buildAppointmentIntegrations,
   parseAppointmentCalendarTenantMap
@@ -2738,6 +2739,36 @@ async function appointmentReminderConfiguration(tenantId) {
     timezone: setup.timezone || answers.operations && answers.operations.timezone || "America/Bogota",
     business_name: setup.business_name || answers.business && (answers.business.brand_name || answers.business.name) || "Nextfor"
   };
+}
+
+async function whatsappCustomerServiceWindowOpen(tenantId, phone, now) {
+  if (!SUPABASE_ENABLED || !SUPABASE_TENANT_COLUMNS_ENABLED) return false;
+  const userId = normalizeConversationUserId(phone);
+  const cleanTenant = canonicalRuntimeTenantId(tenantId);
+  if (!userId || !cleanTenant) return false;
+  try {
+    const response = await axios.get(SUPABASE_URL + "/rest/v1/" + SUPABASE_TABLE, {
+      params: {
+        select: "ts",
+        tenant_id: "eq." + cleanTenant,
+        user_id: "eq." + userId,
+        channel: "eq.whatsapp",
+        order: "ts.desc",
+        limit: 1
+      },
+      headers: SB_HEADERS,
+      timeout: 8000
+    });
+    const lastInboundAt = Date.parse(response.data && response.data[0] && response.data[0].ts || "");
+    const current = new Date(now || Date.now()).getTime();
+    return Number.isFinite(lastInboundAt) && current >= lastInboundAt && current - lastInboundAt < 24 * 60 * 60 * 1000;
+  } catch (error) {
+    log("warn", "appointment_customer_window_lookup_failed", {
+      tenant_id: cleanTenant,
+      error: cleanRuntimeText(error && error.message, 200)
+    });
+    return false;
+  }
 }
 
 async function appointmentsStorageReady(force) {
@@ -5467,13 +5498,14 @@ const appointmentReminderService = createAppointmentReminderService({
     appointmentRegistry.hydrate([row]);
   },
   deliver: async function (appointment, template, params) {
-    const sent = await sendTemplate(appointment.customer_phone, template, params, { tenant_id: appointment.tenant_id });
-    const message = sent && sent.meta && sent.meta.messages && sent.meta.messages[0];
-    return {
-      ok: !!(sent && sent.ok),
-      provider_id: message && message.id || "",
-      error: sent && sent.error || null
-    };
+    return deliverAppointmentWhatsApp({
+      appointment,
+      template,
+      params,
+      customerWindowOpen: whatsappCustomerServiceWindowOpen,
+      sendText,
+      sendTemplate
+    });
   }
 });
 let appointmentRemindersProcessing = false;

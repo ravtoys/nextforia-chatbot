@@ -2,12 +2,39 @@
 
 const assert = require("assert");
 const { createAppointmentReminderService, timingOffsets } = require("./appointment-reminders");
+const { deliverAppointmentWhatsApp, reminderText } = require("./appointment-whatsapp-delivery");
 
 assert.deepStrictEqual(timingOffsets("both"), ["24h", "6h"]);
 assert.deepStrictEqual(timingOffsets("24h"), ["24h"]);
 assert.deepStrictEqual(timingOffsets("none"), []);
 
 (async function () {
+  const deliveryParams = { customer_name: "Ana", business_name: "Clínica", appointment_date: "viernes 21 de agosto", appointment_time: "03:00 p. m." };
+  assert.match(reminderText(deliveryParams), /Ana/);
+  let templateAttempts = 0;
+  const openWindowDelivery = await deliverAppointmentWhatsApp({
+    appointment: { tenant_id: "tenant-a", customer_phone: "+573001112233" },
+    params: deliveryParams,
+    template: "appointment_reminder_nextfor",
+    customerWindowOpen: async () => true,
+    sendText: async () => true,
+    sendTemplate: async () => { templateAttempts += 1; return { ok: true }; }
+  });
+  assert.equal(openWindowDelivery.mode, "text");
+  assert.equal(templateAttempts, 0, "an open customer window must not require a template");
+  let textAttempts = 0;
+  const closedWindowDelivery = await deliverAppointmentWhatsApp({
+    appointment: { tenant_id: "tenant-a", customer_phone: "+573001112233" },
+    params: deliveryParams,
+    template: "appointment_reminder_nextfor",
+    customerWindowOpen: async () => false,
+    sendText: async () => { textAttempts += 1; return true; },
+    sendTemplate: async () => ({ ok: true, meta: { messages: [{ id: "wamid.1" }] } })
+  });
+  assert.equal(closedWindowDelivery.mode, "template");
+  assert.equal(closedWindowDelivery.provider_id, "wamid.1");
+  assert.equal(textAttempts, 0, "a closed customer window must not attempt free-form text");
+
   const saved = [];
   const sent = [];
   let current = new Date("2026-08-21T14:00:00.000Z");
