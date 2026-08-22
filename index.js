@@ -5181,6 +5181,31 @@ const APPOINTMENT_OPERATIONAL_PROMPT = [
   "- Informa que la cita quedó confirmada solo cuando book_appointment responda status=booked y calendar_sync_status=synced."
 ].join("\n");
 
+function buildAppointmentRequirementsContext(onboarding) {
+  const settings = appointmentSettingsFromOnboarding(onboarding);
+  const requirements = (settings.booking_requirements || []).filter(function (row) {
+    return row && row.active !== false;
+  });
+  if (!requirements.length) {
+    return [
+      "REQUISITOS ACTIVOS PARA RESERVAR:",
+      "- Este tenant no configuró campos personales adicionales. Fecha, hora y consentimiento siguen siendo necesarios.",
+      "- Si faltan fecha, hora o consentimiento, pregunta solo el dato faltante."
+    ].join("\n");
+  }
+  const lines = [
+    "REQUISITOS ACTIVOS PARA RESERVAR:",
+    "- Esta lista viene de la configuración del tenant y aplica a este cliente solamente.",
+    "- Antes de confirmar, recopila todos los campos marcados OBLIGATORIO. Los opcionales no bloquean.",
+    "- Si falta más de un dato, pregunta solo el primer OBLIGATORIO faltante usando la pregunta configurada.",
+    "- En book_appointment envía booking_fields con estos IDs exactos."
+  ];
+  requirements.forEach(function (row) {
+    lines.push("- " + row.id + " (" + row.label + "): " + (row.required ? "OBLIGATORIO" : "opcional") + ". Pregunta: " + row.question);
+  });
+  return lines.join("\n").slice(0, 6000);
+}
+
 async function searchShopifyStorefront(query, options = {}) {
   if (!SHOPIFY_STOREFRONT_DOMAIN) return { products: [], total: 0, query, error: "shopify_storefront_not_configured" };
   // CACHE (v32): si la misma query se buscó hace <5min, reusar resultado.
@@ -7047,11 +7072,15 @@ async function executeBookAppointment(userId, tenantId, input, actor) {
     channelPhone
   });
   if (!requirementCheck.ok) {
+    const nextMissing = requirementCheck.missing[0] || {};
     return {
       ok: false,
       error: "missing_booking_requirements",
       message: "Faltan datos obligatorios antes de confirmar.",
-      missing_fields: requirementCheck.missing
+      missing_fields: requirementCheck.missing,
+      next_bot_instruction: nextMissing.question
+        ? "Pregunta ahora solo este dato obligatorio: " + nextMissing.question
+        : "Pregunta ahora solo el primer dato obligatorio faltante."
     };
   }
   input = Object.assign({}, input, {
@@ -7611,6 +7640,9 @@ async function handleConversationInTurnContext(userId, userMessage, conversation
       timeZone: normalizeAppointmentTimeZone(appointmentConfiguration.time_zone)
     })
     : "";
+  const appointmentRequirementsContext = routeUsesAppointmentBot
+    ? buildAppointmentRequirementsContext(activeClientOnboarding)
+    : "";
   let onboardingConversationContext = buildCoverageConversationContext(activeClientOnboarding);
   let workingHistory = history.slice(-adaptiveBudget.historyMessages);
   console.log(`[AI budget ${maskedIdentifier(userId)}] tier=${adaptiveBudget.tier} max_tokens=${adaptiveBudget.maxTokens} history=${adaptiveBudget.historyMessages} reasons=${adaptiveBudget.reasons.join(",") || "none"}`);
@@ -7631,6 +7663,7 @@ async function handleConversationInTurnContext(userId, userMessage, conversation
           ...(onboardingConversationContext ? [{ type: "text", text: onboardingConversationContext }] : []),
           ...(serviceAreaContext ? [{ type: "text", text: serviceAreaContext }] : []),
           ...(appointmentDateContext ? [{ type: "text", text: appointmentDateContext }] : []),
+          ...(appointmentRequirementsContext ? [{ type: "text", text: appointmentRequirementsContext }] : []),
           ...(pendingRatings.has(stateKey) ? [{ type: "text", text: "⚠️ NOTA DEL SISTEMA: Cliente acaba de salir de handoff con humano. Pide calificación con send_rating_request ANTES de responder a otra cosa que diga." }] : []),
           ...(cartContextFor(userId, stateKey) ? [{ type: "text", text: cartContextFor(userId, stateKey) }] : []),
           ...(memoryContext ? [{ type: "text", text: memoryContext }] : []),

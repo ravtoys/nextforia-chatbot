@@ -77,6 +77,10 @@ function deferred() {
   assert(applicationSource.includes("return conversationTurnContext.run(function ()"), "every conversation must enter an isolated async context");
   assert(applicationSource.includes("conversationTurnContext.snapshot()"), "conversation persistence must use the isolated snapshot");
   assert(applicationSource.includes('conversationTurnContext.run({\n    tools: ["human_handoff_active"]'), "paused human turns must have their own context");
+  assert(applicationSource.includes("function buildAppointmentRequirementsContext(onboarding)"), "appointment runtime must build a live tenant requirements context");
+  assert(applicationSource.includes("REQUISITOS ACTIVOS PARA RESERVAR"), "appointment runtime must name the active booking requirements in the prompt");
+  assert(applicationSource.includes("...(appointmentRequirementsContext ? [{ type: \"text\", text: appointmentRequirementsContext }] : [])"), "appointment requirements must be injected into dynamic system context");
+  assert(applicationSource.includes("next_bot_instruction: nextMissing.question"), "missing configured appointment fields must guide the next bot reply");
   assert(!/\blet\s+turn(?:Tools|ZeroQueries|Handoff|Rating|ZeroSearchActive)\b/.test(applicationSource), "process-global turn state must not return");
   console.log("conversation-turn-context.test.js ok");
 })().catch(function (error) {
