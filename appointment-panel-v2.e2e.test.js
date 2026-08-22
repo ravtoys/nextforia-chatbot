@@ -182,6 +182,16 @@ async function seedAppointment(base, secret, agentId, customerName) {
             { id: "full_name", type: "full_name", label: "Nombre completo", active: true, required: true },
             { id: "primera_cita", type: "custom", label: "Primera cita", question: "¿Es tu primera cita?", active: true, required: true }
           ],
+          deposit_policy: {
+            required: true,
+            appointment_value_cop: 250000,
+            deposit_amount_cop: 50000,
+            payment_methods: [
+              { type: "bank_transfer", active: true },
+              { type: "payment_link", active: true },
+              { type: "cash", active: false }
+            ]
+          },
           rules: [{ id: "rule-a", text: "Atender únicamente en horario de Clínica A.", active: true }],
           exceptions: [{ id: "closed-a", date: "2030-07-22", mode: "close", note: "Cierre Clínica A" }],
           reminder_policy: { enabled: true, channel: "whatsapp", offsets_minutes: [1440, 360] }
@@ -194,6 +204,8 @@ async function seedAppointment(base, secret, agentId, customerName) {
     assert(payload.settings.booking_requirements.some(function (row) {
       return row.id === "primera_cita" && row.required === true;
     }), "tenant A must persist its custom appointment requirement");
+    assert.strictEqual(payload.settings.deposit_policy.deposit_amount_cop, 50000);
+    assert.strictEqual(payload.settings.deposit_policy.payment_methods.filter(function (row) { return row.active; }).length, 2);
     const revisionAfterFirstSave = payload.revision;
 
     response = await fetch(base + "/admin/panel/appointment-settings", {
@@ -209,6 +221,8 @@ async function seedAppointment(base, secret, agentId, customerName) {
     assert(!settingsB.settings.rules.some(function (row) { return row.id === "rule-a"; }), "tenant B must not see tenant A rules");
     assert(!settingsB.settings.booking_requirements.some(function (row) { return row.id === "primera_cita"; }),
       "tenant B must not see tenant A appointment requirements");
+    assert.strictEqual(settingsB.settings.deposit_policy.required, false,
+      "tenant B must not inherit tenant A deposit settings");
 
     response = await fetch(base + "/admin/panel/appointments-data", { headers: { cookie: cookieA } });
     assert.strictEqual(response.status, 200);

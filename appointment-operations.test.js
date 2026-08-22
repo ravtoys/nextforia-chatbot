@@ -9,6 +9,7 @@ const {
   appointmentSettingsFromOnboarding,
   compileAvailabilityRules,
   compileBookingRequirements,
+  compileDepositPolicy,
   deriveAppointmentReminderStatus,
   evaluateScheduleException,
   materializeAppointmentReminders,
@@ -17,6 +18,7 @@ const {
   reminderSnapshot,
   timingOffsets,
   updateAppointmentSettings,
+  validateDepositPolicy,
   validateBookingRequirements
 } = require("./appointment-operations");
 
@@ -70,6 +72,23 @@ const isolatedTenantRequirements = normalizeBookingRequirements([
 assert.strictEqual(validateBookingRequirements(isolatedTenantRequirements, {}, {}).missing[0].id, "sede");
 assert.strictEqual(configuredRequirements.some(function (row) { return row.id === "sede"; }), false);
 
+const depositPolicy = validateDepositPolicy({
+  required: true,
+  appointment_value_cop: 250000,
+  deposit_amount_cop: 50000,
+  payment_methods: [
+    { type: "bank_transfer", active: true },
+    { type: "payment_link", active: true },
+    { type: "cash", active: false },
+    { type: "custom", id: "reception", label: "Pago en recepción", active: true }
+  ]
+});
+assert.strictEqual(depositPolicy.ok, true);
+assert.strictEqual(depositPolicy.policy.payment_methods.filter(function (row) { return row.active; }).length, 3);
+assert.match(compileDepositPolicy(depositPolicy.policy), /\$50\.000 COP/);
+assert.match(compileDepositPolicy(depositPolicy.policy), /Pago en recepción/);
+assert.strictEqual(validateDepositPolicy({ required: true, appointment_value_cop: 250000, deposit_amount_cop: 0, payment_methods: [] }).error, "deposit_amount_required");
+
 const normalized = normalizeAppointmentSettings({
   revision: 3,
   scheduling_rules: [
@@ -109,6 +128,7 @@ assert.strictEqual(partialBlocked.available_until, "12:00");
 
 const updated = updateAppointmentSettings(normalized, {
   booking_policy: { default_duration_minutes: 60, buffer_minutes: 20 },
+  deposit_policy: depositPolicy.policy,
   reminder_policy: { max_attempts: 3 },
   booking_requirements: configuredRequirements,
   scheduling_rules: normalized.scheduling_rules.concat([{ text: "Atender sábados en la mañana." }])
@@ -118,6 +138,7 @@ assert.strictEqual(updated.updated_by, "admin@tenant-a.test");
 assert.strictEqual(updated.scheduling_rules.length, 3);
 assert.strictEqual(updated.reminder_policy.max_attempts, 3);
 assert.deepStrictEqual(updated.booking_policy, { default_duration_minutes: 60, buffer_minutes: 20 });
+assert.strictEqual(updated.deposit_policy.deposit_amount_cop, 50000);
 assert.strictEqual(updated.booking_requirements.some(function (row) { return row.id === "primera_cita" && row.required; }), true);
 assert.throws(function () {
   updateAppointmentSettings(updated, {}, { expectedRevision: 3, now: NOW });

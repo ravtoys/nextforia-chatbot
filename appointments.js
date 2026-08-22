@@ -24,6 +24,7 @@ const APPOINTMENT_REMINDER_STATES = new Set([
   "cancelled",
   "blocked"
 ]);
+const DEPOSIT_STATUSES = new Set(["not_required", "pending", "customer_reported_paid", "verified"]);
 
 function cleanText(value, max) {
   return String(value == null ? "" : value).trim().slice(0, max || 500);
@@ -32,6 +33,11 @@ function cleanText(value, max) {
 function cleanStatus(value) {
   const status = cleanText(value, 40).toLowerCase().replace(/[\s-]+/g, "_");
   return APPOINTMENT_STATUSES.has(status) ? status : "not_requested";
+}
+
+function cleanDepositStatus(value) {
+  const status = cleanText(value, 40).toLowerCase().replace(/[\s-]+/g, "_");
+  return DEPOSIT_STATUSES.has(status) ? status : "not_required";
 }
 
 function cleanReminderState(value) {
@@ -252,6 +258,9 @@ function normalizeAppointment(input) {
   if (Object.keys(bookingFields).length) normalized.booking_fields = bookingFields;
   if (Object.prototype.hasOwnProperty.call(input, "booking_requirements_version")) {
     normalized.booking_requirements_version = Math.max(1, Math.min(100, Math.round(Number(input.booking_requirements_version) || 1)));
+  }
+  if (Object.prototype.hasOwnProperty.call(input, "deposit_status")) {
+    normalized.deposit_status = cleanDepositStatus(input.deposit_status);
   }
   const customerConversationId = cleanText(input.customer_conversation_id, 200);
   if (customerConversationId) normalized.customer_conversation_id = customerConversationId;

@@ -2,7 +2,7 @@
 
 const crypto = require("crypto");
 
-const APPOINTMENT_SETTINGS_VERSION = 2;
+const APPOINTMENT_SETTINGS_VERSION = 3;
 const APPOINTMENT_REMINDER_VERSION = 1;
 const BOOKING_REQUIREMENT_TYPES = new Set(["appointment_type", "full_name", "phone", "email", "id", "address", "custom"]);
 const STANDARD_BOOKING_REQUIREMENTS = Object.freeze([
@@ -14,6 +14,12 @@ const STANDARD_BOOKING_REQUIREMENTS = Object.freeze([
   { id: "address", type: "address", label: "Dirección", question: "¿Cuál es tu dirección?", active: false, required: false }
 ]);
 const REMINDER_CHANNELS = new Set(["whatsapp", "email", "sms"]);
+const DEPOSIT_PAYMENT_METHOD_TYPES = new Set(["bank_transfer", "payment_link", "cash", "custom"]);
+const DEPOSIT_PAYMENT_METHOD_LABELS = Object.freeze({
+  bank_transfer: "Transferencia bancaria",
+  payment_link: "Link de pago",
+  cash: "Efectivo"
+});
 const REMINDER_STATUSES = new Set([
   "scheduled", "paused", "sending", "sent", "delivered", "read", "confirmed",
   "retrying", "no_response", "failed", "cancelled"
@@ -100,6 +106,85 @@ function normalizeBookingPolicy(input, fallback) {
       8 * 60
     )
   };
+}
+
+function amountCop(value, fallback) {
+  const parsed = Math.round(Number(value));
+  if (!Number.isFinite(parsed)) return fallback == null ? 0 : fallback;
+  return Math.max(0, Math.min(parsed, 1000000000000));
+}
+
+function normalizeDepositPaymentMethod(input, index) {
+  const source = input && typeof input === "object" ? input : { type: input };
+  const type = text(source.type, 40).toLowerCase();
+  if (!DEPOSIT_PAYMENT_METHOD_TYPES.has(type)) return null;
+  const label = text(source.label || DEPOSIT_PAYMENT_METHOD_LABELS[type], 120);
+  if (!label) return null;
+  return {
+    id: text(source.id, 120).replace(/[^a-zA-Z0-9_-]/g, "") || type + "_" + (index + 1),
+    type,
+    label,
+    active: source.active !== false,
+    order: integer(source.order, index, 0, 100)
+  };
+}
+
+function normalizeDepositPolicy(input, fallback) {
+  const source = input && typeof input === "object" ? input : {};
+  const previous = fallback && typeof fallback === "object" ? fallback : {};
+  const methodsInput = Object.prototype.hasOwnProperty.call(source, "payment_methods")
+    ? source.payment_methods
+    : previous.payment_methods;
+  const seen = new Set();
+  const paymentMethods = (Array.isArray(methodsInput) ? methodsInput : []).map(normalizeDepositPaymentMethod)
+    .filter(Boolean).sort(function (a, b) { return a.order - b.order; }).filter(function (method) {
+      const key = method.type === "custom" ? method.id : method.type;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, 8).map(function (method, index) { return Object.assign({}, method, { order: index }); });
+  return {
+    required: Object.prototype.hasOwnProperty.call(source, "required") ? source.required === true : previous.required === true,
+    appointment_value_cop: amountCop(
+      Object.prototype.hasOwnProperty.call(source, "appointment_value_cop") ? source.appointment_value_cop : previous.appointment_value_cop,
+      0
+    ),
+    deposit_amount_cop: amountCop(
+      Object.prototype.hasOwnProperty.call(source, "deposit_amount_cop") ? source.deposit_amount_cop : previous.deposit_amount_cop,
+      0
+    ),
+    payment_methods: paymentMethods
+  };
+}
+
+function validateDepositPolicy(value) {
+  const policy = normalizeDepositPolicy(value);
+  if (!policy.required) return { ok: true, policy };
+  const methods = policy.payment_methods.filter(function (method) { return method.active; });
+  if (policy.appointment_value_cop <= 0) return { ok: false, error: "appointment_value_required", policy };
+  if (policy.deposit_amount_cop <= 0) return { ok: false, error: "deposit_amount_required", policy };
+  if (policy.deposit_amount_cop > policy.appointment_value_cop) return { ok: false, error: "deposit_exceeds_appointment_value", policy };
+  if (!methods.length) return { ok: false, error: "deposit_payment_method_required", policy };
+  return { ok: true, policy };
+}
+
+function formatCop(amount) {
+  return "$" + amountCop(amount).toLocaleString("es-CO") + " COP";
+}
+
+function compileDepositPolicy(policyInput) {
+  const checked = validateDepositPolicy(policyInput);
+  const policy = checked.policy;
+  if (!policy.required) return "No se requiere anticipo para confirmar una cita.";
+  const methods = policy.payment_methods.filter(function (method) { return method.active; }).map(function (method) { return method.label; });
+  return [
+    "ANTICIPO OBLIGATORIO ANTES DE CONFIRMAR:",
+    "- Valor de la cita: " + formatCop(policy.appointment_value_cop) + ".",
+    "- Anticipo requerido: " + formatCop(policy.deposit_amount_cop) + ".",
+    "- Métodos aceptados: " + (methods.join(", ") || "sin método configurado") + ".",
+    "- Informa estos datos antes de pedir el pago. No inventes cuentas, enlaces ni instrucciones no configuradas.",
+    "- No confirmes la cita hasta que el pago esté verificado por el flujo autorizado."
+  ].join("\n");
 }
 
 function bookingRequirementId(value, fallback) {
@@ -463,6 +548,7 @@ function normalizeAppointmentSettings(input, options) {
     buffer_minutes: source.buffer_minutes
   });
   const bookingRequirements = normalizeBookingRequirements(source.booking_requirements, source.required_booking_fields);
+  const depositPolicy = normalizeDepositPolicy(source.deposit_policy);
   return {
     version: APPOINTMENT_SETTINGS_VERSION,
     revision: integer(source.revision, 0, 0, Number.MAX_SAFE_INTEGER),
@@ -471,6 +557,7 @@ function normalizeAppointmentSettings(input, options) {
     reminder_policy: reminderPolicy,
     booking_policy: bookingPolicy,
     booking_requirements: bookingRequirements,
+    deposit_policy: depositPolicy,
     required_booking_fields: compileBookingRequirements(bookingRequirements),
     default_duration_minutes: bookingPolicy.default_duration_minutes,
     buffer_minutes: bookingPolicy.buffer_minutes,
@@ -504,6 +591,7 @@ function appointmentSettingsFromOnboarding(onboarding, options) {
     };
   }
   if (!Array.isArray(source.booking_requirements)) source.booking_requirements = answerSetup.booking_requirements;
+  if (!source.deposit_policy) source.deposit_policy = answerSetup.deposit_policy;
   if (!source.required_booking_fields) source.required_booking_fields = answerSetup.required_booking_fields;
   if (!source.reminder_policy) {
     const channel = text(configuration.reminder_channel || answerSetup.reminder_channel, 40).toLowerCase();
@@ -546,11 +634,17 @@ function updateAppointmentSettings(currentInput, patchInput, options) {
     booking_requirements: Object.prototype.hasOwnProperty.call(patch, "booking_requirements")
       ? patch.booking_requirements
       : current.booking_requirements,
+    deposit_policy: Object.prototype.hasOwnProperty.call(patch, "deposit_policy")
+      ? patch.deposit_policy
+      : current.deposit_policy,
     reminder_policy: normalizeReminderPolicy(patch.reminder_policy, current.reminder_policy, now),
     updated_at: now,
     updated_by: text(optionsValue.actor, 160)
   };
-  return normalizeAppointmentSettings(merged, { now });
+  const updated = normalizeAppointmentSettings(merged, { now });
+  const depositCheck = validateDepositPolicy(updated.deposit_policy);
+  if (!depositCheck.ok) throw new AppointmentOperationsError(depositCheck.error, 422, { deposit_policy: depositCheck.policy });
+  return updated;
 }
 
 function appointmentIdentity(appointment) {
@@ -770,17 +864,20 @@ module.exports = {
   appointmentSettingsFromOnboarding,
   compileAvailabilityRules,
   compileBookingRequirements,
+  compileDepositPolicy,
   deriveAppointmentReminderStatus,
   evaluateScheduleException,
   materializeAppointmentReminders,
   normalizeAppointmentSettings,
   normalizeBookingPolicy,
   normalizeBookingRequirements,
+  normalizeDepositPolicy,
   normalizeReminder,
   normalizeReminderPolicy,
   reminderId,
   reminderSnapshot,
   timingOffsets,
   updateAppointmentSettings,
+  validateDepositPolicy,
   validateBookingRequirements
 };

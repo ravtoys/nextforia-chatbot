@@ -14,13 +14,17 @@ assert(configurationUi.clientScript.includes('["shipping","Datos para un envío"
 assert(configurationUi.clientScript.includes('["reminders","Recordatorio de cita o reserva","Con Tempo o Atlas"]'));
 assert(configurationUi.clientScript.includes('["appointment_requirements","Datos para confirmar una cita","Con Tempo o Atlas"]'));
 assert(configurationUi.clientScript.includes('/admin/panel/appointment-settings'));
-assert(configurationUi.clientScript.includes('settings:{booking_requirements:state.nxAppointmentRequirements}'));
+assert(configurationUi.clientScript.includes('booking_requirements:state.nxAppointmentRequirements,deposit_policy:state.nxAppointmentDepositPolicy'));
 assert(configurationUi.clientScript.includes('PANEL_CONTEXT.appointments'));
 assert(configurationUi.clientScript.includes('Nombre completo'));
 assert(configurationUi.clientScript.includes('Documento de identidad'));
 assert(configurationUi.clientScript.includes('Pregunta personalizada'));
 assert(configurationUi.clientScript.includes('Obligatorio'));
 assert(configurationUi.clientScript.includes('Opcional'));
+assert(configurationUi.clientScript.includes('¿Tu negocio requiere un anticipo?'));
+assert(configurationUi.clientScript.includes('Transferencia bancaria'));
+assert(configurationUi.clientScript.includes('Link de pago'));
+assert(configurationUi.clientScript.includes('nxToggleAppointmentDeposit'));
 assert(configurationUi.clientScript.includes("¿Cómo cobras el envío?"));
 assert(configurationUi.clientScript.includes("shipping.flat_fee_cop"));
 assert(configurationUi.clientScript.includes("shipping.free_over_cop"));

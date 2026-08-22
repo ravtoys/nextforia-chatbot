@@ -2,7 +2,9 @@
 
 const {
   compileBookingRequirements,
-  normalizeBookingRequirements
+  compileDepositPolicy,
+  normalizeBookingRequirements,
+  normalizeDepositPolicy
 } = require("./appointment-operations");
 
 const DEFAULT_ONBOARDING = Object.freeze({
@@ -124,6 +126,7 @@ const DEFAULT_ONBOARDING = Object.freeze({
     availability_rules: "",
     required_booking_fields: "",
     booking_requirements: [],
+    deposit_policy: { required: false, appointment_value_cop: 0, deposit_amount_cop: 0, payment_methods: [] },
     minimum_booking_notice: "",
     maximum_booking_window: "",
     booking_confirmation_mode: "",
@@ -641,6 +644,7 @@ function normalizeOnboarding(input) {
         appointmentSetup.booking_requirements,
         appointmentSetup.required_booking_fields
       ),
+      deposit_policy: normalizeDepositPolicy(appointmentSetup.deposit_policy),
       minimum_booking_notice: text(appointmentSetup.minimum_booking_notice, 500),
       maximum_booking_window: text(appointmentSetup.maximum_booking_window, 500),
       booking_confirmation_mode: choice(appointmentSetup.booking_confirmation_mode, ["automatic", "manual_approval", "depends", ""], ""),
@@ -932,6 +936,7 @@ function buildAppointmentSystemPrompt(configuration) {
     ["Duración predeterminada de cada cita", config.default_duration_minutes ? config.default_duration_minutes + " minutos" : ""],
     ["Separación mínima entre citas", config.buffer_minutes != null ? config.buffer_minutes + " minutos" : ""],
     ["Datos antes de confirmar", compileBookingRequirements(config.booking_requirements)],
+    ["Anticipo para confirmar", compileDepositPolicy(config.deposit_policy)],
     ["Confirmación de reserva", config.booking_confirmation_mode],
     ["Cancelaciones y cambios", config.cancellation_policy],
     ["No-show", config.no_show_policy],
@@ -1015,6 +1020,7 @@ function normalizeAppointmentConfiguration(input, meta) {
     settings_last_error: text(source.settings_last_error, 500),
     required_booking_fields: text(source.required_booking_fields, 4000),
     booking_requirements: normalizeBookingRequirements(source.booking_requirements, source.required_booking_fields),
+    deposit_policy: normalizeDepositPolicy(source.deposit_policy),
     minimum_booking_notice: text(source.minimum_booking_notice, 1200),
     maximum_booking_window: text(source.maximum_booking_window, 1200),
     booking_confirmation_mode: text(source.booking_confirmation_mode, 1200),
@@ -1103,6 +1109,7 @@ function generateAppointmentConfiguration(input, meta) {
     revision: appointment.revision,
     required_booking_fields: appointment.required_booking_fields,
     booking_requirements: appointment.booking_requirements,
+    deposit_policy: appointment.deposit_policy,
     minimum_booking_notice: appointment.minimum_booking_notice,
     maximum_booking_window: appointment.maximum_booking_window,
     booking_confirmation_mode: appointment.booking_confirmation_mode,

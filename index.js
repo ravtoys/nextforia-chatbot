@@ -210,11 +210,13 @@ const {
   AppointmentOperationsError,
   applyReminderAction,
   appointmentSettingsFromOnboarding,
+  compileDepositPolicy,
   evaluateScheduleException,
   materializeAppointmentReminders,
   normalizeReminder,
   reminderSnapshot,
   updateAppointmentSettings,
+  validateDepositPolicy,
   validateBookingRequirements
 } = require("./appointment-operations");
 const {
@@ -420,7 +422,7 @@ app.get("/admin/terms", (req, res) => res.type("html").send(renderTermsOfService
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────────
 const PRODUCT_NAME = "NextforIA Chatbot";
-const BOT_VERSION = "v427-appointment-requirements-stability";  // bump cada release; usado por endpoints /admin/*
+const BOT_VERSION = "v428-appointment-deposits";  // bump cada release; usado por endpoints /admin/*
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "";
 const DASHBOARD_KEY = process.env.DASHBOARD_KEY || "";
 const DASHBOARD_SESSION_COOKIE = "nextforia_dashboard_session";
@@ -5125,6 +5127,11 @@ const APPOINTMENT_TOOLS = [
           description: "Respuestas de los requisitos configurados por el negocio, usando exactamente el ID de cada campo.",
           additionalProperties: { type: "string" }
         },
+        deposit_status: {
+          type: "string",
+          enum: ["not_required", "pending", "customer_reported_paid", "verified"],
+          description: "Usa verified solamente si el flujo autorizado del negocio verificó el anticipo. Nunca lo marques verified solo porque el cliente dice que pagó."
+        },
         data_processing_consent: { type: "boolean", description: "Debe ser true solo cuando el cliente autorizó el tratamiento de datos." }
       },
       required: ["starts_at", "duration_minutes", "data_processing_consent"]
@@ -5176,6 +5183,7 @@ const APPOINTMENT_OPERATIONAL_PROMPT = [
   "- Antes de reservar resume una sola vez los datos reunidos y pide confirmación; no los solicites nuevamente.",
   "- Para consultar un horario usa check_appointment_availability.",
   "- Antes de reservar confirma fecha/hora, consentimiento de datos y todos los requisitos obligatorios configurados.",
+  "- Si este tenant exige anticipo, comunica primero el monto y los métodos configurados. Nunca inventes datos de pago ni confirmes la cita solo porque el cliente dice que pagó.",
   "- Usa book_appointment únicamente después de que el cliente confirme explícitamente.",
   "- Si el calendario no está conectado o una herramienta falla, no inventes disponibilidad: ofrece apoyo humano.",
   "- Informa que la cita quedó confirmada solo cuando book_appointment responda status=booked y calendar_sync_status=synced."
@@ -5186,11 +5194,14 @@ function buildAppointmentRequirementsContext(onboarding) {
   const requirements = (settings.booking_requirements || []).filter(function (row) {
     return row && row.active !== false;
   });
+  const depositContext = compileDepositPolicy(settings.deposit_policy);
   if (!requirements.length) {
     return [
       "REQUISITOS ACTIVOS PARA RESERVAR:",
       "- Este tenant no configuró campos personales adicionales. Fecha, hora y consentimiento siguen siendo necesarios.",
-      "- Si faltan fecha, hora o consentimiento, pregunta solo el dato faltante."
+      "- Si faltan fecha, hora o consentimiento, pregunta solo el dato faltante.",
+      "",
+      depositContext
     ].join("\n");
   }
   const lines = [
@@ -5203,6 +5214,7 @@ function buildAppointmentRequirementsContext(onboarding) {
   requirements.forEach(function (row) {
     lines.push("- " + row.id + " (" + row.label + "): " + (row.required ? "OBLIGATORIO" : "opcional") + ". Pregunta: " + row.question);
   });
+  lines.push("", depositContext);
   return lines.join("\n").slice(0, 6000);
 }
 
@@ -7058,7 +7070,30 @@ async function executeBookAppointment(userId, tenantId, input, actor) {
     return { ok: false, error: "invalid_appointment_datetime" };
   }
   const onboarding = await loadClientOnboarding(false, tenantId);
-  const bookingRequirements = appointmentSettingsFromOnboarding(onboarding).booking_requirements;
+  const appointmentSettings = appointmentSettingsFromOnboarding(onboarding);
+  const bookingRequirements = appointmentSettings.booking_requirements;
+  const depositCheck = validateDepositPolicy(appointmentSettings.deposit_policy);
+  if (!depositCheck.ok) {
+    return {
+      ok: false,
+      error: "deposit_policy_invalid",
+      message: "El negocio debe completar la configuración de anticipo antes de confirmar citas.",
+      deposit_policy: depositCheck.policy
+    };
+  }
+  if (depositCheck.policy.required && String(input && input.deposit_status || "").toLowerCase() !== "verified") {
+    return {
+      ok: false,
+      error: "deposit_required",
+      message: "Se requiere verificar el anticipo antes de confirmar la cita.",
+      deposit: {
+        appointment_value_cop: depositCheck.policy.appointment_value_cop,
+        deposit_amount_cop: depositCheck.policy.deposit_amount_cop,
+        payment_methods: depositCheck.policy.payment_methods.filter(function (method) { return method.active; }).map(function (method) { return method.label; })
+      },
+      next_bot_instruction: "Informa el anticipo y los métodos configurados. No confirmes la cita hasta que el flujo autorizado verifique el pago."
+    };
+  }
   let knownProfile = normalizeCustomerMeta({});
   if (normalizeConversationUserId(userId)) {
     try { knownProfile = await loadCustomerMeta(userId, tenantId); }
@@ -7143,6 +7178,7 @@ async function executeBookAppointment(userId, tenantId, input, actor) {
     consultation_reason: cleanRuntimeText(input && input.consultation_reason, 1000),
     booking_fields: input.booking_fields,
     booking_requirements_version: 2,
+    deposit_status: depositCheck.policy.required ? "verified" : "not_required",
     data_processing_consent: "authorized",
     transcript_summary: "Cita creada desde el bot Appointment por " + bookingChannel + ".",
     source: "nextfor_appointment_bot",
@@ -18446,6 +18482,7 @@ function publicAppointmentSettings(settings, configuration) {
     default_duration_minutes: settings.booking_policy.default_duration_minutes,
     buffer_minutes: settings.booking_policy.buffer_minutes,
     booking_requirements: settings.booking_requirements,
+    deposit_policy: settings.deposit_policy,
     availability_rules: settings.availability_rules,
     timezone: cleanRuntimeText(configuration && configuration.time_zone, 120) || "America/Bogota",
     sync_status: cleanRuntimeText(configuration && configuration.settings_sync_status, 80) || "applied",
@@ -18582,6 +18619,7 @@ async function saveAppointmentSettingsForTenant(tenantId, input, auth) {
   }
   if (Object.prototype.hasOwnProperty.call(patch, "reminder_policy")) settingsPatch.reminder_policy = patch.reminder_policy;
   if (Object.prototype.hasOwnProperty.call(patch, "booking_requirements")) settingsPatch.booking_requirements = patch.booking_requirements;
+  if (Object.prototype.hasOwnProperty.call(patch, "deposit_policy")) settingsPatch.deposit_policy = patch.deposit_policy;
   if (Object.prototype.hasOwnProperty.call(patch, "booking_policy") ||
       Object.prototype.hasOwnProperty.call(patch, "default_duration_minutes") ||
       Object.prototype.hasOwnProperty.call(patch, "buffer_minutes")) {
@@ -18605,6 +18643,7 @@ async function saveAppointmentSettingsForTenant(tenantId, input, auth) {
     default_duration_minutes: updated.booking_policy.default_duration_minutes,
     buffer_minutes: updated.booking_policy.buffer_minutes,
     booking_requirements: updated.booking_requirements,
+    deposit_policy: updated.deposit_policy,
     required_booking_fields: updated.required_booking_fields,
     revision: updated.revision,
     reminder_channel: updated.reminder_policy.channel || "none",
@@ -18619,6 +18658,7 @@ async function saveAppointmentSettingsForTenant(tenantId, input, auth) {
     default_duration_minutes: updated.booking_policy.default_duration_minutes,
     buffer_minutes: updated.booking_policy.buffer_minutes,
     booking_requirements: updated.booking_requirements,
+    deposit_policy: updated.deposit_policy,
     required_booking_fields: updated.required_booking_fields,
     revision: updated.revision,
     reminder_channel: updated.reminder_policy.channel || "none",
