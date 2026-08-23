@@ -60,6 +60,7 @@ Plataforma multi-tenant de NextforIA para atención al cliente y agendamiento po
 | `MESSENGER_VERIFY_TOKEN` | Token para verificar `/messenger/webhook`; usa `VERIFY_TOKEN` si se omite |
 | `META_APP_SECRET` | App Secret de Meta para validar la firma `X-Hub-Signature-256` de WhatsApp, Instagram y Messenger |
 | `META_APP_ID` | App ID usada por los flujos oficiales de autorización Meta del Customer Panel |
+| `META_CONNECTION_HUB_SERVICE_SECRET` | Secreto exclusivo para que otros bots Nextfor soliciten mensajes permitidos al Meta Connection Hub; no reutiliza credenciales de panel ni tokens Meta |
 | `META_WHATSAPP_CONFIG_ID` | Configuration ID de WhatsApp Embedded Signup creado para NextforIA |
 | `META_WHATSAPP_COEXISTENCE_CONFIG_ID` | Configuration ID de Embedded Signup con coexistencia para conservar WhatsApp Business App; usa `META_WHATSAPP_CONFIG_ID` si se omite |
 | `MESSENGER_APP_SECRET` | Alias heredado de `META_APP_SECRET` |
@@ -159,6 +160,10 @@ Plataforma multi-tenant de NextforIA para atención al cliente y agendamiento po
 | `GET /admin/templates` | Lista protegida de plantillas WhatsApp configuradas localmente |
 | `GET /admin/commercial-readiness` | Checklist comercial/multi-cliente protegido |
 | `POST /admin/template-test` | Genera payload de plantilla o envia con `send: true` si ya fue aprobada |
+| `GET /admin/meta-message-hub/templates` | Sincroniza y muestra al tenant autenticado los estados reales de sus plantillas WhatsApp |
+| `POST /admin/meta-message-hub/templates/ensure` | Crea para el WABA del tenant las plantillas compartidas faltantes; quedan pendientes hasta la aprobación de Meta |
+| `POST /admin/meta-message-hub/send` | Solicita desde el Customer Panel un envío permitido fuera de ventana, sin aceptar un `tenant_id` aportado por el cliente |
+| `POST /internal/meta-message-hub/send` | Contrato server-to-server para Customer Service, Appointment y Core Platform con secreto dedicado e idempotencia obligatoria |
 | `POST /admin/smoke-check` | Simula búsqueda, selección, checkout y total sin enviar WhatsApps |
 | `POST /admin/order-status-test` | Prueba consulta de pedido Shopify con `order_number`, `customer_name`, `phone_or_email` opcional |
 | `POST /admin/alert` | Envía alerta interna protegida por `DASHBOARD_KEY` |

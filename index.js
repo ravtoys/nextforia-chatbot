@@ -205,7 +205,10 @@ const { CommerceRegistry, createShopifyAdapter } = require("./commerce");
 const { cleanShopifyShop, createPairingToken, verifyPairingToken } = require("./commerce/pairing-token");
 const { AppointmentRegistry, appointmentCustomerPhone } = require("./appointments");
 const { createAppointmentConfirmationService } = require("./appointment-confirmations");
-const { deliverAppointmentWhatsApp } = require("./appointment-whatsapp-delivery");
+const {
+  USE_CASES: META_OUT_OF_WINDOW_USE_CASES,
+  createMetaMessageHub
+} = require("./meta-message-hub");
 const {
   AppointmentOperationsError,
   applyReminderAction,
@@ -420,7 +423,7 @@ app.get("/admin/terms", (req, res) => res.type("html").send(renderTermsOfService
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────────
 const PRODUCT_NAME = "NextforIA Chatbot";
-const BOT_VERSION = "v427-appointment-requirements-stability";  // bump cada release; usado por endpoints /admin/*
+const BOT_VERSION = "v428-meta-out-of-window-hub";  // bump cada release; usado por endpoints /admin/*
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "";
 const DASHBOARD_KEY = process.env.DASHBOARD_KEY || "";
 const DASHBOARD_SESSION_COOKIE = "nextforia_dashboard_session";
@@ -495,15 +498,11 @@ const APPOINTMENT_REMINDERS_ENABLED = SUPABASE_APPOINTMENTS_ENABLED &&
 const APPOINTMENT_CONFIRMATIONS_ENABLED = SUPABASE_APPOINTMENTS_ENABLED && process.env.APPOINTMENT_CONFIRMATIONS_ENABLED !== "0";
 const APPOINTMENT_CONFIRMATION_BACKFILL_HOURS = boundedEnvInt("APPOINTMENT_CONFIRMATION_BACKFILL_HOURS", 72, 1, 168);
 const APPOINTMENT_REMINDER_INTERVAL_MS = boundedEnvInt("APPOINTMENT_REMINDER_INTERVAL_SECONDS", 60, 30, 300) * 1000;
-const APPOINTMENT_WHATSAPP_REMINDER_TEMPLATE = String(process.env.APPOINTMENT_WHATSAPP_REMINDER_TEMPLATE || "").trim();
 const APPOINTMENT_PANEL_V2_ENABLED = process.env.APPOINTMENT_PANEL_V2_ENABLED !== "0";
 // Reminder sends are part of the appointment product. Keep an explicit kill
 // switch for rollback, but do not require a second production flag after the
 // appointment/reminder module itself has already been enabled.
 const APPOINTMENT_REMINDER_SENDS_ENABLED = process.env.APPOINTMENT_REMINDER_SENDS_ENABLED !== "0";
-const APPOINTMENT_REMINDER_TEMPLATE_NAME = String(
-  process.env.APPOINTMENT_REMINDER_TEMPLATE_NAME || APPOINTMENT_WHATSAPP_REMINDER_TEMPLATE
-).trim();
 const APPOINTMENT_STORAGE_TEST_READY = process.env.NODE_ENV === "test" &&
   process.env.APPOINTMENT_STORAGE_TEST_READY === "1";
 const appointmentStorageHealth = { checked_at: 0, ready: false, error: "not_checked" };
@@ -671,6 +670,7 @@ const IG_GRAPH_BASE_URL = configuredHttpsOrigin(process.env.IG_GRAPH_BASE_URL, "
 const IG_VERIFY_TOKEN = process.env.IG_VERIFY_TOKEN || VERIFY_TOKEN;
 const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION || "v26.0";
 const META_APP_ID = String(process.env.META_APP_ID || "").trim();
+const META_CONNECTION_HUB_SERVICE_SECRET = String(process.env.META_CONNECTION_HUB_SERVICE_SECRET || "").trim();
 const META_WHATSAPP_CONFIG_ID = String(process.env.META_WHATSAPP_CONFIG_ID || "").trim();
 const META_WHATSAPP_COEXISTENCE_CONFIG_ID = String(
   process.env.META_WHATSAPP_COEXISTENCE_CONFIG_ID || META_WHATSAPP_CONFIG_ID
@@ -2769,7 +2769,7 @@ async function appointmentReminderConfiguration(tenantId) {
   return {
     channel: setup.reminder_channel,
     timing: setup.reminder_timing,
-    template: APPOINTMENT_WHATSAPP_REMINDER_TEMPLATE,
+    template: "appointment_reminder",
     timezone: setup.timezone || answers.operations && answers.operations.timezone || "America/Bogota",
     business_name: setup.business_name || answers.business && (answers.business.brand_name || answers.business.name) || "Nextfor"
   };
@@ -3052,27 +3052,35 @@ async function deliverAppointmentReminder(row, appointment) {
   const message = appointmentReminderMessage(row, appointment);
   if (row.channel === "whatsapp") {
     const configuration = await appointmentReminderConfiguration(row.tenant_id);
-    const when = appointmentDateTime(appointment && appointment.starts_at, configuration.timezone);
-    const result = await deliverAppointmentWhatsApp({
-      appointment: Object.assign({}, appointment, {
+    if (await whatsappCustomerServiceWindowOpen(row.tenant_id, recipient)) {
+      const deliveryResult = {};
+      const sent = await sendText(recipient, message, {
         tenant_id: row.tenant_id,
-        customer_phone: recipient
-      }),
-      template: APPOINTMENT_REMINDER_TEMPLATE_NAME,
-      params: {
-        customer_name: cleanRuntimeText(row.customer_name || appointment && appointment.customer_name, 80) || "Cliente",
-        appointment_date: when.date,
-        appointment_time: when.time,
-        business_name: configuration.business_name || "Nextfor"
-      },
-      customerWindowOpen: whatsappCustomerServiceWindowOpen,
-      sendText,
-      sendTemplate
-    });
-    if (!result || result.ok !== true) {
-      throw new Error("appointment_reminder_whatsapp_failed:" + cleanRuntimeText(result && result.error && (result.error.code || result.error.message), 160));
+        human_agent: false,
+        delivery_result: deliveryResult
+      });
+      if (!sent) throw new Error("appointment_reminder_whatsapp_text_failed");
+      return deliveryResult.provider_message_id || "";
     }
-    return result.provider_id || "";
+    const when = appointmentDateTime(appointment && appointment.starts_at, configuration.timezone);
+    const result = await metaMessageHub.request({
+      tenant_id: row.tenant_id,
+      channel: "whatsapp",
+      source: "appointment",
+      use_case: "appointment_reminder",
+      recipient,
+      parameters: {
+        customer_name: cleanRuntimeText(row.customer_name || appointment && appointment.customer_name, 80) || "Cliente",
+        business_name: configuration.business_name || "Nextfor",
+        appointment_date: when.date,
+        appointment_time: when.time
+      },
+      idempotency_key: ["appointment-reminder", row.id || row.reminder_key, row.due_at || row.scheduled_for].join(":")
+    });
+    if (!result || result.status !== "accepted") {
+      throw new Error("appointment_reminder_whatsapp_failed");
+    }
+    return result.provider_message_id || "";
   }
   const sent = await sendText(recipient, message, { tenant_id: row.tenant_id, human_agent: false });
   if (!sent) throw new Error("appointment_reminder_text_failed");
@@ -3552,6 +3560,117 @@ function normalizeTurnRow(r, options) {
     _id: r.id
   };
 }
+
+const META_MESSAGE_HUB_TEMPLATE_TOOL = "meta_message_hub_templates_v1";
+const META_MESSAGE_HUB_DELIVERY_TOOL = "meta_message_hub_delivery_v1";
+const metaMessageHubTemplateCache = new Map();
+const metaMessageHubDeliveryCache = new Map();
+
+function metaMessageHubPayload(turn, prefix) {
+  const raw = String(turn && turn.botReply || turn && turn.bot_reply || "");
+  if (!raw.startsWith(prefix)) return null;
+  try { return JSON.parse(raw.slice(prefix.length).trim()); }
+  catch (_) { return null; }
+}
+
+const metaMessageHubStore = {
+  async replaceTemplates(tenantId, channel, templates) {
+    const cleanTenant = cleanTenantId(tenantId);
+    const cleanChannelName = cleanChannel(channel);
+    const snapshot = {
+      tenant_id: cleanTenant,
+      channel: cleanChannelName,
+      templates: Array.isArray(templates) ? templates : [],
+      updated_at: new Date().toISOString()
+    };
+    const key = cleanTenant + ":" + cleanChannelName;
+    metaMessageHubTemplateCache.set(key, snapshot);
+    if (SUPABASE_ENABLED) {
+      await supabaseInsertStrict({
+        ts: snapshot.updated_at,
+        tenantId: cleanTenant,
+        userId: "meta-templates:" + cleanTenant,
+        userMessage: "",
+        botReply: "[MetaMessageHubTemplates] " + JSON.stringify(snapshot),
+        tools: [META_MESSAGE_HUB_TEMPLATE_TOOL],
+        zeroResultQueries: [],
+        handoff: false,
+        rating: null,
+        numTools: 1,
+        status: "ok",
+        channel: cleanChannelName,
+        eval: { skip: true, reason: META_MESSAGE_HUB_TEMPLATE_TOOL }
+      });
+    }
+    return snapshot.templates;
+  },
+
+  async listTemplates(tenantId, channel) {
+    const cleanTenant = cleanTenantId(tenantId);
+    const cleanChannelName = cleanChannel(channel);
+    const key = cleanTenant + ":" + cleanChannelName;
+    const cached = metaMessageHubTemplateCache.get(key);
+    if (cached) return cached.templates || [];
+    if (!SUPABASE_ENABLED) return [];
+    const rows = await supabaseFetchUserToolRecent(
+      "meta-templates:" + cleanTenant,
+      META_MESSAGE_HUB_TEMPLATE_TOOL,
+      1,
+      { tenantId: cleanTenant, strict: true }
+    );
+    const turn = rows && rows[0] ? normalizeTurnRow(rows[0], { strict: true }) : null;
+    const snapshot = metaMessageHubPayload(turn, "[MetaMessageHubTemplates]");
+    if (!snapshot || cleanTenantId(snapshot.tenant_id) !== cleanTenant || cleanChannel(snapshot.channel) !== cleanChannelName) return [];
+    metaMessageHubTemplateCache.set(key, snapshot);
+    return Array.isArray(snapshot.templates) ? snapshot.templates : [];
+  },
+
+  async getDelivery(tenantId, idempotencyHash) {
+    const cleanTenant = cleanTenantId(tenantId);
+    const cleanHash = cleanRuntimeText(idempotencyHash, 128);
+    const key = cleanTenant + ":" + cleanHash;
+    if (metaMessageHubDeliveryCache.has(key)) return metaMessageHubDeliveryCache.get(key);
+    if (!SUPABASE_ENABLED) return null;
+    const rows = await supabaseFetchUserToolRecent(
+      "meta-delivery:" + cleanHash,
+      META_MESSAGE_HUB_DELIVERY_TOOL,
+      1,
+      { tenantId: cleanTenant, strict: true }
+    );
+    const turn = rows && rows[0] ? normalizeTurnRow(rows[0], { strict: true }) : null;
+    const delivery = metaMessageHubPayload(turn, "[MetaMessageHubDelivery]");
+    if (!delivery || cleanTenantId(delivery.tenant_id) !== cleanTenant || delivery.idempotency_hash !== cleanHash) return null;
+    metaMessageHubDeliveryCache.set(key, delivery);
+    return delivery;
+  },
+
+  async saveDelivery(delivery) {
+    const cleanTenant = cleanTenantId(delivery && delivery.tenant_id);
+    const cleanHash = cleanRuntimeText(delivery && delivery.idempotency_hash, 128);
+    if (!cleanTenant || !cleanHash) throw new Error("meta_message_hub_delivery_scope_required");
+    const key = cleanTenant + ":" + cleanHash;
+    metaMessageHubDeliveryCache.set(key, delivery);
+    if (SUPABASE_ENABLED) {
+      await supabaseInsertStrict({
+        ts: delivery.sent_at || new Date().toISOString(),
+        tenantId: cleanTenant,
+        userId: "meta-delivery:" + cleanHash,
+        userMessage: "",
+        botReply: "[MetaMessageHubDelivery] " + JSON.stringify(delivery),
+        tools: [META_MESSAGE_HUB_DELIVERY_TOOL],
+        zeroResultQueries: [],
+        handoff: false,
+        rating: null,
+        numTools: 1,
+        status: delivery.status || "ok",
+        channel: cleanChannel(delivery.channel) || "whatsapp",
+        sourceEventId: "meta-hub:" + cleanHash,
+        eval: { skip: true, reason: META_MESSAGE_HUB_DELIVERY_TOOL }
+      });
+    }
+    return delivery;
+  }
+};
 
 const signatureEvents = new EventEmitter();
 signatureEvents.setMaxListeners(200);
@@ -5940,6 +6059,134 @@ async function sendTemplate(to, templateName, params, options) {
   }
 }
 
+async function listMetaHubWhatsAppTemplates(runtime) {
+  const wabaId = cleanRuntimeText(runtime && (runtime.whatsappBusinessAccountId || runtime.whatsapp_business_account_id), 240);
+  const accessToken = cleanRuntimeText(runtime && (runtime.accessToken || runtime.access_token), 4096);
+  if (!wabaId || !accessToken) throw new Error("whatsapp_template_runtime_incomplete");
+  const rows = [];
+  let after = null;
+  let extendedFields = true;
+  for (let page = 0; page < 20; page++) {
+    let response;
+    try {
+      response = await axios.get(`https://graph.facebook.com/${META_GRAPH_VERSION}/${encodeURIComponent(wabaId)}/message_templates`, {
+        params: {
+          fields: extendedFields
+            ? "id,name,status,category,language,components,quality_score,rejected_reason"
+            : "id,name,status,category,language,components",
+          limit: 100,
+          ...(after ? { after } : {})
+        },
+        headers: { Authorization: `Bearer ${accessToken}` },
+        timeout: 12000
+      });
+    } catch (error) {
+      if (!extendedFields || page > 0 || Number(error && error.response && error.response.data && error.response.data.error && error.response.data.error.code) !== 100) throw error;
+      extendedFields = false;
+      page--;
+      continue;
+    }
+    const pageRows = Array.isArray(response.data && response.data.data) ? response.data.data : [];
+    rows.push(...pageRows);
+    after = cleanRuntimeText(response.data && response.data.paging && response.data.paging.cursors && response.data.paging.cursors.after, 1000);
+    if (!after || !pageRows.length) break;
+  }
+  return rows;
+}
+
+async function createMetaHubWhatsAppTemplate(runtime, blueprint) {
+  const wabaId = cleanRuntimeText(runtime && (runtime.whatsappBusinessAccountId || runtime.whatsapp_business_account_id), 240);
+  const accessToken = cleanRuntimeText(runtime && (runtime.accessToken || runtime.access_token), 4096);
+  if (!wabaId || !accessToken) throw new Error("whatsapp_template_runtime_incomplete");
+  const response = await axios.post(
+    `https://graph.facebook.com/${META_GRAPH_VERSION}/${encodeURIComponent(wabaId)}/message_templates`,
+    {
+      name: blueprint.name,
+      language: blueprint.language,
+      category: blueprint.category,
+      components: blueprint.components
+    },
+    { headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" }, timeout: 12000 }
+  );
+  return response.data;
+}
+
+async function sendMetaHubWhatsAppTemplate(runtime, recipient, template, parameters) {
+  const phoneNumberId = cleanRuntimeText(runtime && (runtime.phoneNumberId || runtime.phone_number_id), 240);
+  const accessToken = cleanRuntimeText(runtime && (runtime.accessToken || runtime.access_token), 4096);
+  const to = normalizeConversationUserId(recipient);
+  if (!phoneNumberId || !accessToken || !to) throw new Error("whatsapp_template_delivery_scope_incomplete");
+  const response = await axios.post(
+    `https://graph.facebook.com/${META_GRAPH_VERSION}/${encodeURIComponent(phoneNumberId)}/messages`,
+    {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to,
+      type: "template",
+      template: {
+        name: template.name,
+        language: { code: template.language },
+        components: parameters.length ? [{
+          type: "body",
+          parameters: parameters.map(function (value) { return { type: "text", text: value }; })
+        }] : []
+      }
+    },
+    { headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" }, timeout: 12000 }
+  );
+  const message = response.data && response.data.messages && response.data.messages[0];
+  return { provider_message_id: cleanRuntimeText(message && message.id, 500), response: response.data };
+}
+
+async function sendMetaHubMessengerTagged(runtime, recipient, text, tag) {
+  const pageId = cleanRuntimeText(runtime && (runtime.pageId || runtime.page_id), 240);
+  const accessToken = cleanRuntimeText(runtime && (runtime.accessToken || runtime.access_token), 4096);
+  const parsed = parseChannelRecipient(recipient);
+  if (!pageId || !accessToken || parsed.channel !== "messenger" || !parsed.id) {
+    throw new Error("messenger_tagged_delivery_scope_incomplete");
+  }
+  const response = await axios.post(
+    `${MESSENGER_GRAPH_BASE_URL}/${META_GRAPH_VERSION}/${encodeURIComponent(pageId)}/messages`,
+    {
+      recipient: { id: parsed.id },
+      messaging_type: "MESSAGE_TAG",
+      tag,
+      message: { text: String(text || "").slice(0, 2000) }
+    },
+    { headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" }, timeout: 12000 }
+  );
+  return { provider_message_id: cleanRuntimeText(response.data && response.data.message_id, 500), response: response.data };
+}
+
+async function sendMetaHubInstagramHumanAgent(runtime, recipient, text) {
+  const accessToken = cleanRuntimeText(runtime && (runtime.accessToken || runtime.access_token), 4096);
+  const sendId = cleanRuntimeText(runtime && (runtime.instagramUserId || runtime.instagram_user_id), 240);
+  const parsed = parseChannelRecipient(recipient);
+  if (!accessToken || !sendId || parsed.channel !== "instagram" || !parsed.id) {
+    throw new Error("instagram_human_agent_delivery_scope_incomplete");
+  }
+  const graphOrigin = instagramGraphOriginForRuntime(runtime);
+  const response = await axios.post(
+    `${graphOrigin}/${META_GRAPH_VERSION}/${encodeURIComponent(sendId)}/messages`,
+    { recipient: { id: parsed.id }, message: { text: String(text || "").slice(0, 950) }, tag: "HUMAN_AGENT" },
+    { headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" }, timeout: 12000 }
+  );
+  return {
+    provider_message_id: cleanRuntimeText(response.data && (response.data.message_id || response.data.id), 500),
+    response: response.data
+  };
+}
+
+const metaMessageHub = createMetaMessageHub({
+  store: metaMessageHubStore,
+  resolveRuntime: resolveChannelRuntimeForTenant,
+  listProviderTemplates: listMetaHubWhatsAppTemplates,
+  createProviderTemplate: createMetaHubWhatsAppTemplate,
+  sendWhatsAppTemplate: sendMetaHubWhatsAppTemplate,
+  sendMessengerTagged: sendMetaHubMessengerTagged,
+  sendInstagramHumanAgent: sendMetaHubInstagramHumanAgent
+});
+
 const appointmentReminderService = createAppointmentReminderService({
   loadAppointments: loadUpcomingAppointmentsForReminderWorker,
   loadConfiguration: appointmentReminderConfiguration,
@@ -5948,14 +6195,37 @@ const appointmentReminderService = createAppointmentReminderService({
     appointmentRegistry.hydrate([row]);
   },
   deliver: async function (appointment, template, params) {
-    return deliverAppointmentWhatsApp({
-      appointment,
-      template,
-      params,
-      customerWindowOpen: whatsappCustomerServiceWindowOpen,
-      sendText,
-      sendTemplate
+    if (await whatsappCustomerServiceWindowOpen(appointment.tenant_id, appointment.customer_phone)) {
+      const deliveryResult = {};
+      const sent = await sendText(appointment.customer_phone, appointmentReminderMessage({
+        tenant_id: appointment.tenant_id,
+        customer_name: params.customer_name
+      }, appointment), {
+        tenant_id: appointment.tenant_id,
+        human_agent: false,
+        delivery_result: deliveryResult
+      });
+      return {
+        ok: !!sent,
+        provider_id: deliveryResult.provider_message_id || "",
+        mode: "text"
+      };
+    }
+    const delivery = await metaMessageHub.request({
+      tenant_id: appointment.tenant_id,
+      channel: "whatsapp",
+      source: "appointment",
+      use_case: "appointment_reminder",
+      recipient: appointment.customer_phone,
+      parameters: params,
+      idempotency_key: ["legacy-reminder", appointment.appointment_id || appointment.id, appointment.starts_at, template].join(":")
     });
+    return {
+      ok: delivery.status === "accepted",
+      provider_id: delivery.provider_message_id,
+      mode: "template",
+      mechanism: delivery.mechanism
+    };
   }
 });
 
@@ -18929,6 +19199,87 @@ app.get("/admin/templates", (req, res) => {
       };
     })
   });
+});
+
+function metaMessageHubErrorResponse(res, error) {
+  const status = Number(error && error.status) || 502;
+  const code = cleanRuntimeText(error && (error.code || error.message), 160) || "meta_message_hub_failed";
+  const safeDetails = error && error.details && typeof error.details === "object" ? error.details : null;
+  res.status(status).json({
+    ok: false,
+    error: code,
+    details: safeDetails
+  });
+}
+
+app.get("/admin/meta-message-hub/templates", async (req, res) => {
+  if (!customerPanelAuthOk(req, "viewer")) return res.status(401).json({ ok: false, error: "unauthorized" });
+  const tenantId = customerTenantForAuth(dashboardAuth(req));
+  if (!tenantId) return res.status(403).json({ ok: false, error: "tenant_scope_required" });
+  try {
+    const result = await metaMessageHub.syncTemplates({ tenant_id: tenantId, channel: "whatsapp" });
+    res.json({
+      ok: true,
+      tenant_id: tenantId,
+      channel: "whatsapp",
+      use_cases: Object.keys(META_OUT_OF_WINDOW_USE_CASES),
+      templates: result.templates
+    });
+  } catch (error) {
+    metaMessageHubErrorResponse(res, error);
+  }
+});
+
+app.post("/admin/meta-message-hub/templates/ensure", async (req, res) => {
+  if (!customerPanelAuthOk(req, "admin")) return res.status(401).json({ ok: false, error: "unauthorized" });
+  const tenantId = customerTenantForAuth(dashboardAuth(req));
+  if (!tenantId) return res.status(403).json({ ok: false, error: "tenant_scope_required" });
+  try {
+    const result = await metaMessageHub.ensureTemplates({
+      tenant_id: tenantId,
+      use_cases: req.body && req.body.use_cases
+    });
+    res.status(result.created.length ? 202 : 200).json(Object.assign({ ok: true }, result));
+  } catch (error) {
+    metaMessageHubErrorResponse(res, error);
+  }
+});
+
+app.post("/admin/meta-message-hub/send", async (req, res) => {
+  if (!customerPanelAuthOk(req, "agent")) return res.status(401).json({ ok: false, error: "unauthorized" });
+  const tenantId = customerTenantForAuth(dashboardAuth(req));
+  if (!tenantId) return res.status(403).json({ ok: false, error: "tenant_scope_required" });
+  try {
+    const result = await metaMessageHub.request({
+      tenant_id: tenantId,
+      channel: req.body && req.body.channel,
+      source: req.body && req.body.source,
+      use_case: req.body && req.body.use_case,
+      recipient: req.body && req.body.recipient,
+      parameters: req.body && req.body.parameters,
+      text: req.body && req.body.text,
+      confirmed_event: req.body && req.body.confirmed_event === true,
+      idempotency_key: req.body && req.body.idempotency_key
+    });
+    res.status(202).json({ ok: true, delivery: result });
+  } catch (error) {
+    metaMessageHubErrorResponse(res, error);
+  }
+});
+
+function metaMessageHubServiceAuthOk(req) {
+  const supplied = cleanRuntimeText(req.get("x-nextfor-service-key"), 4096);
+  return !!META_CONNECTION_HUB_SERVICE_SECRET && safeEqualText(supplied, META_CONNECTION_HUB_SERVICE_SECRET);
+}
+
+app.post("/internal/meta-message-hub/send", async (req, res) => {
+  if (!metaMessageHubServiceAuthOk(req)) return res.status(401).json({ ok: false, error: "unauthorized" });
+  try {
+    const result = await metaMessageHub.request(req.body || {});
+    res.status(202).json({ ok: true, delivery: result });
+  } catch (error) {
+    metaMessageHubErrorResponse(res, error);
+  }
 });
 
 app.get("/admin/commercial-readiness", (req, res) => {
