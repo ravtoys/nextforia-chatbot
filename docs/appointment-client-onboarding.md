@@ -35,7 +35,7 @@
 - `GET /admin/panel/appointments-data` entrega una vista segura y aislada por `tenant_id`; no incluye tokens ni credenciales del proveedor de calendario.
 - `POST /admin/panel/appointments/action` permite al usuario admin confirmar, cancelar o solicitar reprogramación de citas de su propio `tenant_id`; actualiza la fuente real (`AppointmentRegistry` y Supabase si está activo) y deja auditoría cifrada en el payload.
 - La respuesta del panel incluye `integrations`, el semáforo real del bot de citas: ElevenLabs, calendario, WhatsApp, correo, llamadas, Supabase y bloqueadores antes de live.
-- En Customer Panel, el cliente puede iniciar Google Calendar y WhatsApp/Meta desde los conectores existentes; llamadas se muestran como solicitadas/pendientes cuando aplican, pero la asignación real del número ElevenLabs la ejecuta Nextfor desde Super Admin.
+- En Customer Panel, el cliente puede iniciar Google Calendar, Microsoft Outlook o Samsung Calendar y WhatsApp/Meta desde los conectores existentes. Samsung Calendar se conecta mediante la misma cuenta de Google u Outlook que el cliente ya sincroniza en su dispositivo; Nextfor no guarda una contraseña de Samsung ni duplica eventos. Las llamadas se muestran como solicitadas/pendientes cuando aplican, pero la asignación real del número ElevenLabs la ejecuta Nextfor desde Super Admin.
 - Citas, conversaciones de agendamiento y recordatorios comparten el identificador de cita para reflejar confirmaciones y handoffs en una sola fuente de verdad.
 - Super Admin ve el mismo gate en `GET /admin/customer-setups/:tenantId` como `appointment_integrations`, y la flota de agendamiento en `GET /admin/appointments-overview`; la pantalla global no debe leer el HTML del panel ni reconstruir métricas desde la interfaz.
 - Las acciones del demo mutan únicamente el estado local de la vista. En Customer Panel real, confirmar/cancelar/reprogramar persiste en backend; el envío outbound y la sincronización Google Calendar deben mostrarse como pendientes hasta que el proveedor confirme la ejecución.
@@ -51,7 +51,7 @@
 
 ### Agenda
 
-- Proveedor: Google Calendar, Outlook, Cal.com o Calendly.
+- Proveedor: Google Calendar, Microsoft Outlook o Samsung Calendar (sincronizado mediante Google u Outlook).
 - Cuenta y calendario autorizado.
 - Zona horaria.
 - Días y franjas disponibles.
@@ -101,7 +101,7 @@
 8. Cuando Appointment esté aprobado para Testing, activar `ELEVENLABS_APPOINTMENT_AGENT_WRITE_ENABLED=1` y usar Super Admin → `Configurar agente real`. Esta acción aplica el prompt al agente y, si el cliente pidió llamadas, asigna el `phone_number_id` al agente con la API de ElevenLabs.
 9. Configurar `GOOGLE_CALENDAR_CLIENT_ID` y `GOOGLE_CALENDAR_CLIENT_SECRET`.
 10. En Google Cloud, agregar redirect URI: `https://nextforia.com/admin/appointment-calendar/google/callback`.
-11. Conectar Google Calendar desde Customer Panel o Super Admin. `APPOINTMENT_CALENDAR_TENANT_MAP` queda solo como fallback temporal operativo.
+11. Conectar Google Calendar, Microsoft Outlook o Samsung Calendar desde Customer Panel. Para Samsung, elegir la cuenta de Google u Outlook que ya está sincronizada en la app Samsung Calendar. `APPOINTMENT_CALENDAR_TENANT_MAP` queda solo como fallback temporal operativo.
 12. Activar `SUPABASE_APPOINTMENTS_ENABLED=1`.
 13. Crear un usuario DERCO en `DASHBOARD_USERS` con `tenant_id: "grupo-derco"`.
 14. Conectar WhatsApp desde el panel de canales del cliente usando el flujo de Meta existente.

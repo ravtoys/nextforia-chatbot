@@ -423,7 +423,7 @@ app.get("/admin/terms", (req, res) => res.type("html").send(renderTermsOfService
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────────
 const PRODUCT_NAME = "NextforIA Chatbot";
-const BOT_VERSION = "v447-appointment-services-restored";  // bump cada release; usado por endpoints /admin/*
+const BOT_VERSION = "v448-samsung-calendar-connector";  // bump cada release; usado por endpoints /admin/*
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "";
 const DASHBOARD_KEY = process.env.DASHBOARD_KEY || "";
 const DASHBOARD_SESSION_COOKIE = "nextforia_dashboard_session";
@@ -17192,11 +17192,17 @@ app.get("/admin/panel/channel-connections", async (req, res) => {
           }
         }
       }
+      const calendarSurface = calendarConnection && calendarConnection.surface === "samsung" ? "samsung" : "direct";
+      const calendarProvider = calendarConnection && calendarConnection.provider || "google";
       appointmentCalendar = Object.assign({
-        id: (calendarConnection && calendarConnection.provider || "google") + "-calendar",
-        name: calendarConnection && calendarConnection.provider === "microsoft" ? "Microsoft Outlook" : "Google Calendar",
-        description: "Nextfor revisa disponibilidad y crea un calendario separado llamado Citas NextforIA.",
-        authorization_available: appointmentCalendarService.providerConfigured(calendarConnection && calendarConnection.provider || "google")
+        id: (calendarSurface === "samsung" ? "samsung" : calendarProvider) + "-calendar",
+        name: calendarSurface === "samsung"
+          ? "Samsung Calendar"
+          : calendarProvider === "microsoft" ? "Microsoft Outlook" : "Google Calendar",
+        description: calendarSurface === "samsung"
+          ? "Sincronizado con " + (calendarProvider === "microsoft" ? "Microsoft Outlook" : "Google Calendar") + ". Nextfor crea Citas NextforIA y aparecen en Samsung Calendar."
+          : "Nextfor revisa disponibilidad y crea un calendario separado llamado Citas NextforIA.",
+        authorization_available: appointmentCalendarService.providerConfigured(calendarProvider)
       }, calendarConnection || {});
     }
     res.json({
@@ -17767,6 +17773,7 @@ function appointmentCalendarErrorResponse(res, error) {
 function appointmentCalendarProvidersForConnection(connection) {
   const availability = appointmentCalendarService.providerAvailability();
   const activeProvider = connection && connection.provider || "";
+  const activeSurface = connection && connection.surface === "samsung" ? "samsung" : "direct";
   return [
     {
       id: "google-calendar",
@@ -17781,11 +17788,26 @@ function appointmentCalendarProvidersForConnection(connection) {
       name: "Microsoft Outlook",
       description: "Conecta Outlook.com o Microsoft 365. Nextfor crea Citas NextforIA y respeta la disponibilidad de tu agenda.",
       authorization_available: availability.microsoft === true
+    },
+    {
+      id: "samsung-calendar",
+      provider: "samsung",
+      surface: "samsung",
+      name: "Samsung Calendar",
+      description: "Sincroniza Samsung Calendar mediante tu cuenta de Google o Microsoft Outlook. Nextfor crea, reprograma y cancela las citas en esa cuenta.",
+      authorization_available: availability.google === true || availability.microsoft === true,
+      connection_options: [
+        { provider: "google", name: "Google Calendar", authorization_available: availability.google === true },
+        { provider: "microsoft", name: "Microsoft Outlook", authorization_available: availability.microsoft === true }
+      ]
     }
   ].map(function (item) {
-    const active = item.provider === activeProvider;
+    const active = item.surface === "samsung"
+      ? activeSurface === "samsung"
+      : activeSurface === "direct" && item.provider === activeProvider;
     return Object.assign(item, {
       active,
+      underlying_provider: item.surface === "samsung" ? activeProvider || null : item.provider,
       status: active ? connection.status : "not_connected",
       account_email: active ? connection.account_email : null,
       account_label: active ? connection.account_label : null,
@@ -17832,6 +17854,7 @@ app.post("/admin/panel/appointment-calendar/:provider/connect", async (req, res)
   }
   try {
     const provider = ["google", "microsoft"].includes(req.params.provider) ? req.params.provider : "";
+    const surface = req.body && req.body.surface === "samsung" ? "samsung" : "direct";
     if (!provider) throw new AppointmentCalendarError("invalid_calendar_request", 400);
     const tenantId = customerTenantForAuth(auth);
     const redirectUri = appointmentCalendarCallbackUrlForRequest(req, provider);
@@ -17841,13 +17864,14 @@ app.post("/admin/panel/appointment-calendar/:provider/connect", async (req, res)
     const state = createCalendarOAuthState(DASHBOARD_SESSION_SECRET, {
       tenant_id: tenantId,
       provider,
+      surface,
       actor_id: auth.user_id || auth.username,
       actor: channelConnectionActor(auth),
       redirect_uri: redirectUri,
       return_path: returnPath,
       return_mode: "popup"
     });
-    const authorizationUrl = await appointmentCalendarService.begin(tenantId, provider, auth, state, { redirectUri });
+    const authorizationUrl = await appointmentCalendarService.begin(tenantId, provider, auth, state, { redirectUri, surface });
     res.json({ ok: true, authorization_url: authorizationUrl });
   } catch (error) {
     console.error("customer appointment calendar connect start error:", error.message);
@@ -17884,6 +17908,7 @@ app.get("/admin/appointment-calendar/:provider/callback", async (req, res) => {
     await appointmentCalendarService.completeAuthorization({
       tenant_id: state.tenant_id,
       provider: state.provider,
+      surface: state.surface,
       actor: state.actor,
       redirect_uri: state.redirect_uri || appointmentCalendarCallbackUrlForRequest(req, state.provider),
       code: req.query.error ? "" : req.query.code

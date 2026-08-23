@@ -142,6 +142,33 @@ assert.strictEqual(gate.calendar.status, "ready");
 assert.strictEqual(gate.calendar.account_label, "Agenda Clínica A");
 assert.strictEqual(gate.calendar.calendar_id_present, true);
 
+const samsungRecord = JSON.parse(JSON.stringify(record));
+samsungRecord.answers.appointment_setup.calendar_provider = "none";
+gate = buildAppointmentIntegrations(samsungRecord, "clinica-a", Object.assign({}, provisioning, {
+  elevenlabsApiKey: "el-key",
+  elevenlabsWebhookSecret: "el-secret",
+  agentTenantMap: { agent_a: "clinica-a" },
+  elevenlabsAgentConfigured: true,
+  elevenlabsPhoneNumberMapped: true,
+  elevenlabsPhoneNumberConfigured: true,
+  googleCalendarOAuthConfigured: true,
+  calendarConnection: {
+    tenant_id: "clinica-a",
+    provider: "google",
+    surface: "samsung",
+    status: "connected",
+    account_label: "Agenda Samsung",
+    calendar_id: "nextfor-samsung"
+  },
+  metaOAuthReady: true,
+  whatsappConnected: true,
+  supabaseAppointmentsEnabled: true
+}));
+assert.strictEqual(gate.calendar.status, "ready");
+assert.strictEqual(gate.calendar.provider, "samsung");
+assert.strictEqual(gate.calendar.label, "Samsung Calendar");
+assert.strictEqual(gate.calendar.account_label, "Agenda Samsung");
+
 gate = buildAppointmentIntegrations(record, "clinica-a", {
   elevenlabsApiKey: "el-key",
   elevenlabsWebhookSecret: "el-secret",

@@ -42,6 +42,7 @@ function calendarProviderLabel(provider) {
     microsoft: "Microsoft Outlook",
     microsoft_calendar: "Microsoft Outlook",
     outlook: "Outlook Calendar",
+    samsung: "Samsung Calendar",
     calendly: "Calendly",
     calcom: "Cal.com",
     cal_com: "Cal.com",
@@ -107,12 +108,17 @@ function buildAppointmentIntegrations(record, tenantId, options) {
     google: !!options.googleCalendarOAuthConfigured,
     microsoft: !!options.microsoftCalendarOAuthConfigured
   };
-  const selectedOAuthProvider = normalizedProvider || liveCalendarConnection && liveCalendarConnection.provider || "google";
+  const liveCalendarSurface = liveCalendarConnection && liveCalendarConnection.surface === "samsung" ? "samsung" : "direct";
+  const liveCalendarConnected = !!(liveCalendarConnection && liveCalendarConnection.status === "connected");
+  const selectedOAuthProvider = liveCalendarConnection && liveCalendarConnection.provider || normalizedProvider || "google";
+  const visibleCalendarProvider = liveCalendarSurface === "samsung"
+    ? "samsung"
+    : normalizedProvider || liveCalendarConnection && liveCalendarConnection.provider || "";
   const calendarOAuthConfigured = calendarOAuthProviders[selectedOAuthProvider] === true;
   let calendarStatus = "needs_provider";
-  if (["none", ""].includes(normalizedProvider)) calendarStatus = "needs_provider";
-  else if (options.calendarConnected || liveCalendarConnection && liveCalendarConnection.status === "connected") calendarStatus = "ready";
+  if (options.calendarConnected || liveCalendarConnected) calendarStatus = "ready";
   else if (calendarConnection && calendarConnection.status === "connected") calendarStatus = "ready";
+  else if (["none", ""].includes(normalizedProvider)) calendarStatus = "needs_provider";
   else if (["google", "microsoft"].includes(normalizedProvider) && calendarOAuthConfigured) calendarStatus = "needs_customer_connection";
   else if (["google", "microsoft"].includes(normalizedProvider)) calendarStatus = "oauth_not_configured";
   else calendarStatus = "manual_connection_required";
@@ -184,8 +190,8 @@ function buildAppointmentIntegrations(record, tenantId, options) {
       write_enabled: agentWriteEnabled
     },
     calendar: {
-      provider: normalizedProvider || "",
-      label: calendarProviderLabel(normalizedProvider),
+      provider: visibleCalendarProvider,
+      label: calendarProviderLabel(visibleCalendarProvider),
       email: calendarEmail || cleanText(liveCalendarConnection && (liveCalendarConnection.account_email || liveCalendarConnection.calendar_summary), 180).toLowerCase(),
       status: calendarStatus,
       oauth_configured: calendarOAuthConfigured,

@@ -12,6 +12,10 @@ const MICROSOFT_CALENDAR_SCOPES = ["offline_access", "User.Read", "Calendars.Rea
 const APPOINTMENT_CALENDAR_SUMMARY = "Citas NextforIA";
 const CALENDAR_STATUSES = ["not_connected", "connecting", "connected", "needs_attention", "disconnected"];
 const CALENDAR_PROVIDERS = ["google", "microsoft"];
+// Samsung Calendar is a device calendar, not a separate server-side calendar API.
+// We store the surface the customer chose while keeping Google/Microsoft as the
+// actual OAuth provider that owns events, availability and credentials.
+const CALENDAR_SURFACES = ["direct", "samsung"];
 
 class AppointmentCalendarError extends Error {
   constructor(code, status, internalMessage) {
@@ -65,10 +69,16 @@ function cleanCalendarProvider(value) {
   return CALENDAR_PROVIDERS.includes(provider) ? provider : "google";
 }
 
+function cleanCalendarSurface(value) {
+  const surface = cleanText(value, 40).toLowerCase();
+  return CALENDAR_SURFACES.includes(surface) ? surface : "direct";
+}
+
 function emptyCalendarConnection(tenantId, providerId) {
   return {
     tenant_id: cleanTenantId(tenantId),
     provider: cleanCalendarProvider(providerId),
+    surface: "direct",
     status: "not_connected",
     account_email: null,
     account_label: null,
@@ -93,6 +103,7 @@ function emptyCalendarConnection(tenantId, providerId) {
 function publicCalendarConnection(record, options) {
   const safe = Object.assign(emptyCalendarConnection(record && record.tenant_id, record && record.provider), record || {});
   safe.provider = cleanCalendarProvider(safe.provider);
+  safe.surface = cleanCalendarSurface(safe.surface);
   safe.availability_calendar_ids = Array.isArray(safe.availability_calendar_ids)
     ? safe.availability_calendar_ids.slice()
     : [];
@@ -117,6 +128,7 @@ function createCalendarOAuthState(secret, input, now) {
     v: 1,
     tenant_id: cleanTenantId(input && input.tenant_id),
     provider: cleanCalendarProvider(input && input.provider),
+    surface: cleanCalendarSurface(input && input.surface),
     actor_id: cleanText(input && input.actor_id, 200),
     actor: cleanText(input && input.actor, 200),
     redirect_uri: cleanText(input && input.redirect_uri, 500),
@@ -139,6 +151,7 @@ function readCalendarOAuthState(secret, token, now) {
     if (payload.v !== 1 || !payload.exp || payload.exp < Number(now || Date.now())) return null;
     payload.tenant_id = cleanTenantId(payload.tenant_id);
     payload.provider = cleanCalendarProvider(payload.provider);
+    payload.surface = cleanCalendarSurface(payload.surface);
     payload.redirect_uri = cleanText(payload.redirect_uri, 500);
     payload.return_mode = payload.return_mode === "popup" ? "popup" : "";
     if (!payload.tenant_id || !payload.nonce || !payload.actor_id) return null;
@@ -897,10 +910,12 @@ function createAppointmentCalendarConnectionService(options) {
       if (!cleanTenant) throw new AppointmentCalendarError("invalid_calendar_request", 400);
       if (!provider || !provider.configured()) throw new AppointmentCalendarError("calendar_oauth_not_configured", 503);
       const current = await store.get(cleanTenant);
+      const surface = cleanCalendarSurface(beginOptions && beginOptions.surface);
       if (!(current && current.status === "connected" && current.provider !== cleanProvider)) {
         await store.upsert({
           tenant_id: cleanTenant,
           provider: cleanProvider,
+          surface,
           status: "connecting",
           last_error: null,
           last_error_at: null,
@@ -908,7 +923,7 @@ function createAppointmentCalendarConnectionService(options) {
         }, {
           action: "connection_started",
           actor: actorLabel(actor),
-          details: { provider: cleanProvider }
+          details: { provider: cleanProvider, surface }
         });
       }
       return provider.authorizationUrl(state, beginOptions);
@@ -917,6 +932,7 @@ function createAppointmentCalendarConnectionService(options) {
     async completeAuthorization(input) {
       const tenantId = cleanTenantId(input && input.tenant_id);
       const providerId = cleanCalendarProvider(input && input.provider || defaultProvider);
+      const surface = cleanCalendarSurface(input && input.surface);
       const provider = providerFor(providerId);
       if (!tenantId) throw new AppointmentCalendarError("invalid_calendar_request", 400);
       if (!provider || !provider.configured()) throw new AppointmentCalendarError("calendar_oauth_not_configured", 503);
@@ -928,6 +944,7 @@ function createAppointmentCalendarConnectionService(options) {
         const row = await store.upsert({
           tenant_id: tenantId,
           provider: providerId,
+          surface,
           status: "connected",
           account_email: details.account_email,
           account_label: details.account_label,
@@ -949,7 +966,7 @@ function createAppointmentCalendarConnectionService(options) {
         }, {
           action: "connected",
           actor: actorLabel(input.actor),
-          details: { provider: providerId, calendar_id_present: !!details.calendar_id }
+          details: { provider: providerId, surface, calendar_id_present: !!details.calendar_id }
         });
         return publicCalendarConnection(row);
       } catch (error) {
@@ -1106,6 +1123,7 @@ module.exports = {
   CALENDAR_SCOPES,
   MICROSOFT_CALENDAR_SCOPES,
   CALENDAR_PROVIDERS,
+  CALENDAR_SURFACES,
   CALENDAR_STATUSES,
   AppointmentCalendarError,
   AppendOnlyAppointmentCalendarStore,
@@ -1113,6 +1131,7 @@ module.exports = {
   MicrosoftCalendarProvider,
   InMemoryAppointmentCalendarStore,
   cleanCalendarProvider,
+  cleanCalendarSurface,
   cleanTenantId,
   createAppointmentCalendarConnectionService,
   createCalendarOAuthState,

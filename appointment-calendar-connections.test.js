@@ -13,6 +13,7 @@ const {
 const secret = "appointment-calendar-state-secret-2026";
 const state = createCalendarOAuthState(secret, {
   tenant_id: "Grupo Derco!",
+  surface: "samsung",
   actor_id: "admin@derco.example",
   actor: "Admin DERCO",
   redirect_uri: "https://nextforia.com/admin/appointment-calendar/google/callback",
@@ -22,6 +23,7 @@ const state = createCalendarOAuthState(secret, {
 const parsed = readCalendarOAuthState(secret, state, 1001);
 assert.strictEqual(parsed.tenant_id, "grupo-derco");
 assert.strictEqual(parsed.provider, "google");
+assert.strictEqual(parsed.surface, "samsung");
 assert.strictEqual(parsed.actor_id, "admin@derco.example");
 assert.strictEqual(parsed.return_mode, "popup");
 assert.strictEqual(readCalendarOAuthState(secret, state.slice(0, -1) + (state.endsWith("x") ? "y" : "x"), 1001), null);
@@ -93,17 +95,20 @@ assert.match(authUrl, /access_type=offline/);
     now: function () { return new Date("2026-07-28T12:00:00.000Z"); }
   });
   assert.strictEqual(service.providerConfigured(), true);
-  const beginUrl = await service.begin("grupo-derco", { email: "admin@derco.example" }, "signed-state");
+  const beginUrl = await service.begin("grupo-derco", "google", { email: "admin@derco.example" }, "signed-state", { surface: "samsung" });
   assert.match(beginUrl, /signed-state/);
   let status = await service.get("grupo-derco");
   assert.strictEqual(status.status, "connecting");
   assert.strictEqual(status.connect_available, true, "An interrupted OAuth attempt must be immediately retryable");
   const connected = await service.completeAuthorization({
     tenant_id: "grupo-derco",
+    provider: "google",
+    surface: "samsung",
     actor: "admin@derco.example",
     code: "code-1"
   });
   assert.strictEqual(connected.status, "connected");
+  assert.strictEqual(connected.surface, "samsung");
   assert.strictEqual(connected.calendar_summary, "Citas NextforIA");
   assert.strictEqual(connected.account_email, "agenda@derco.example");
   assert.strictEqual(connected.calendar_mode, "app_created");
