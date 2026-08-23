@@ -2,7 +2,7 @@
 
 const crypto = require("crypto");
 
-const APPOINTMENT_SETTINGS_VERSION = 2;
+const APPOINTMENT_SETTINGS_VERSION = 3;
 const APPOINTMENT_REMINDER_VERSION = 1;
 const BOOKING_REQUIREMENT_TYPES = new Set(["appointment_type", "full_name", "phone", "email", "id", "address", "custom"]);
 const STANDARD_BOOKING_REQUIREMENTS = Object.freeze([
@@ -14,6 +14,13 @@ const STANDARD_BOOKING_REQUIREMENTS = Object.freeze([
   { id: "address", type: "address", label: "Dirección", question: "¿Cuál es tu dirección?", active: false, required: false }
 ]);
 const REMINDER_CHANNELS = new Set(["whatsapp", "email", "sms"]);
+const DEPOSIT_PAYMENT_METHOD_TYPES = new Set(["bank_transfer", "payment_link", "cash", "custom"]);
+const DEPOSIT_PAYMENT_METHOD_LABELS = Object.freeze({
+  bank_transfer: "Transferencia bancaria",
+  payment_link: "Link de pago",
+  cash: "Efectivo"
+});
+const APPOINTMENT_SERVICE_MODALITIES = new Set(["in_person", "virtual", "both"]);
 const REMINDER_STATUSES = new Set([
   "scheduled", "paused", "sending", "sent", "delivered", "read", "confirmed",
   "retrying", "no_response", "failed", "cancelled"
@@ -100,6 +107,191 @@ function normalizeBookingPolicy(input, fallback) {
       8 * 60
     )
   };
+}
+
+function amountCop(value, fallback) {
+  const parsed = Math.round(Number(value));
+  if (!Number.isFinite(parsed)) return fallback == null ? 0 : fallback;
+  return Math.max(0, Math.min(parsed, 1000000000000));
+}
+
+function normalizeDepositPaymentMethod(input, index) {
+  const source = input && typeof input === "object" ? input : { type: input };
+  const type = text(source.type, 40).toLowerCase();
+  if (!DEPOSIT_PAYMENT_METHOD_TYPES.has(type)) return null;
+  const label = text(source.label || DEPOSIT_PAYMENT_METHOD_LABELS[type], 120);
+  if (!label) return null;
+  return {
+    id: text(source.id, 120).replace(/[^a-zA-Z0-9_-]/g, "") || type + "_" + (index + 1),
+    type,
+    label,
+    instructions: text(source.instructions, 1000),
+    active: source.active !== false,
+    order: integer(source.order, index, 0, 100)
+  };
+}
+
+function serviceId(value, fallback) {
+  return bookingRequirementId(value, fallback || "service").slice(0, 80);
+}
+
+function normalizeServiceDeposit(input) {
+  const source = input && typeof input === "object" ? input : {};
+  const mode = source.mode === "percentage" ? "percentage" : "fixed";
+  return {
+    required: source.required === true,
+    mode,
+    amount: mode === "percentage"
+      ? Math.max(0, Math.min(100, Number(source.amount) || 0))
+      : amountCop(source.amount, 0)
+  };
+}
+
+function normalizeAppointmentService(input, index) {
+  const source = input && typeof input === "object" ? input : {};
+  const name = text(source.name, 160);
+  if (!name) return null;
+  const modality = APPOINTMENT_SERVICE_MODALITIES.has(source.modality) ? source.modality : "in_person";
+  const methods = (Array.isArray(source.payment_methods) ? source.payment_methods : [])
+    .map(normalizeDepositPaymentMethod).filter(Boolean).slice(0, 8)
+    .map(function (method, methodIndex) { return Object.assign({}, method, { order: methodIndex }); });
+  return {
+    id: serviceId(source.id || name, "service_" + (index + 1)),
+    name,
+    duration_minutes: integer(source.duration_minutes, 0, 0, 24 * 60),
+    price_cop: amountCop(source.price_cop, 0),
+    payment_methods: methods,
+    deposit: normalizeServiceDeposit(source.deposit),
+    modality,
+    address: text(source.address, 1000),
+    virtual_link: text(source.virtual_link, 1000),
+    active: source.active !== false,
+    order: integer(source.order, index, 0, 1000)
+  };
+}
+
+function appointmentServiceRows(value) {
+  if (Array.isArray(value)) return value;
+  // The setup page serializes its dynamic service editor as JSON.  Accept the
+  // serialized form only at this boundary; persistence always receives an
+  // array, so a legacy free-text field can never silently become live rules.
+  if (typeof value === "string" && value.trim().charAt(0) === "[") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (_) {}
+  }
+  return [];
+}
+
+function normalizeAppointmentServices(value) {
+  const source = appointmentServiceRows(value);
+  const seen = new Set();
+  return source.map(normalizeAppointmentService).filter(Boolean).sort(function (a, b) { return a.order - b.order; })
+    .filter(function (service) { if (seen.has(service.id)) return false; seen.add(service.id); return true; })
+    .slice(0, 30).map(function (service, index) { return Object.assign({}, service, { order: index }); });
+}
+
+function validateAppointmentService(serviceInput) {
+  const service = normalizeAppointmentService(serviceInput, 0);
+  if (!service) return { ok: false, error: "appointment_service_name_required" };
+  if (service.duration_minutes < 5) return { ok: false, error: "appointment_service_duration_required", service };
+  if (service.modality === "in_person" && !service.address) return { ok: false, error: "appointment_service_address_required", service };
+  if (service.modality === "virtual" && !service.virtual_link) return { ok: false, error: "appointment_service_virtual_link_required", service };
+  if (service.modality === "both" && (!service.address || !service.virtual_link)) return { ok: false, error: "appointment_service_both_locations_required", service };
+  const methods = service.payment_methods.filter(function (method) { return method.active; });
+  if (service.price_cop > 0 && !methods.length) return { ok: false, error: "appointment_service_payment_method_required", service };
+  if (methods.some(function (method) { return !method.instructions; })) {
+    return { ok: false, error: "appointment_service_payment_instructions_required", service };
+  }
+  if (service.deposit.required) {
+    if (service.deposit.amount <= 0) return { ok: false, error: "appointment_service_deposit_amount_required", service };
+    if (service.deposit.mode === "fixed" && service.deposit.amount > service.price_cop) {
+      return { ok: false, error: "appointment_service_deposit_exceeds_price", service };
+    }
+  }
+  return { ok: true, service };
+}
+
+function compileAppointmentServices(servicesInput) {
+  const services = normalizeAppointmentServices(servicesInput).filter(function (service) { return service.active; });
+  if (!services.length) return "No hay servicios estructurados todavía. No inventes precio, duración, modalidad ni reglas de pago.";
+  const lines = ["SERVICIOS Y REGLAS ACTIVAS DEL TENANT:", "- Pide al cliente elegir un servicio antes de consultar o confirmar una cita. Usa su ID exacto en service_id."];
+  services.forEach(function (service) {
+    const modality = service.modality === "in_person" ? "Presencial: " + service.address : service.modality === "virtual" ? "Virtual: " + service.virtual_link : "Presencial: " + service.address + " · Virtual: " + service.virtual_link + " (el cliente elige)";
+    lines.push("- " + service.name + " [" + service.id + "]: " + service.duration_minutes + " minutos · " + formatCop(service.price_cop) + " · " + modality + ".");
+    if (service.deposit.required) {
+      const deposit = service.deposit.mode === "percentage" ? service.deposit.amount + "% del valor de la cita" : formatCop(service.deposit.amount);
+      lines.push("  Anticipo obligatorio: " + deposit + ". Métodos: " + service.payment_methods.filter(function (method) { return method.active; }).map(function (method) { return method.label + " — " + method.instructions; }).join(" | ") + ". No confirmar sin pago verificado.");
+    } else lines.push("  No exige anticipo para confirmar.");
+  });
+  return lines.join("\n").slice(0, 14000);
+}
+
+function findAppointmentService(servicesInput, requestedId, requestedName) {
+  const services = normalizeAppointmentServices(servicesInput).filter(function (service) { return service.active; });
+  if (!services.length) return { ok: true, service: null, services };
+  const requested = serviceId(requestedId || requestedName, "");
+  const service = services.find(function (row) { return row.id === requested || serviceId(row.name, "") === requested; });
+  return service ? { ok: true, service, services } : { ok: false, error: "appointment_service_required", services };
+}
+
+function normalizeDepositPolicy(input, fallback) {
+  const source = input && typeof input === "object" ? input : {};
+  const previous = fallback && typeof fallback === "object" ? fallback : {};
+  const methodsInput = Object.prototype.hasOwnProperty.call(source, "payment_methods")
+    ? source.payment_methods
+    : previous.payment_methods;
+  const seen = new Set();
+  const paymentMethods = (Array.isArray(methodsInput) ? methodsInput : []).map(normalizeDepositPaymentMethod)
+    .filter(Boolean).sort(function (a, b) { return a.order - b.order; }).filter(function (method) {
+      const key = method.type === "custom" ? method.id : method.type;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, 8).map(function (method, index) { return Object.assign({}, method, { order: index }); });
+  return {
+    required: Object.prototype.hasOwnProperty.call(source, "required") ? source.required === true : previous.required === true,
+    appointment_value_cop: amountCop(
+      Object.prototype.hasOwnProperty.call(source, "appointment_value_cop") ? source.appointment_value_cop : previous.appointment_value_cop,
+      0
+    ),
+    deposit_amount_cop: amountCop(
+      Object.prototype.hasOwnProperty.call(source, "deposit_amount_cop") ? source.deposit_amount_cop : previous.deposit_amount_cop,
+      0
+    ),
+    payment_methods: paymentMethods
+  };
+}
+
+function validateDepositPolicy(value) {
+  const policy = normalizeDepositPolicy(value);
+  if (!policy.required) return { ok: true, policy };
+  const methods = policy.payment_methods.filter(function (method) { return method.active; });
+  if (policy.appointment_value_cop <= 0) return { ok: false, error: "appointment_value_required", policy };
+  if (policy.deposit_amount_cop <= 0) return { ok: false, error: "deposit_amount_required", policy };
+  if (policy.deposit_amount_cop > policy.appointment_value_cop) return { ok: false, error: "deposit_exceeds_appointment_value", policy };
+  if (!methods.length) return { ok: false, error: "deposit_payment_method_required", policy };
+  return { ok: true, policy };
+}
+
+function formatCop(amount) {
+  return "$" + amountCop(amount).toLocaleString("es-CO") + " COP";
+}
+
+function compileDepositPolicy(policyInput) {
+  const checked = validateDepositPolicy(policyInput);
+  const policy = checked.policy;
+  if (!policy.required) return "No se requiere anticipo para confirmar una cita.";
+  const methods = policy.payment_methods.filter(function (method) { return method.active; }).map(function (method) { return method.label; });
+  return [
+    "ANTICIPO OBLIGATORIO ANTES DE CONFIRMAR:",
+    "- Valor de la cita: " + formatCop(policy.appointment_value_cop) + ".",
+    "- Anticipo requerido: " + formatCop(policy.deposit_amount_cop) + ".",
+    "- Métodos aceptados: " + (methods.join(", ") || "sin método configurado") + ".",
+    "- Informa estos datos antes de pedir el pago. No inventes cuentas, enlaces ni instrucciones no configuradas.",
+    "- No confirmes la cita hasta que el pago esté verificado por el flujo autorizado."
+  ].join("\n");
 }
 
 function bookingRequirementId(value, fallback) {
@@ -463,6 +655,7 @@ function normalizeAppointmentSettings(input, options) {
     buffer_minutes: source.buffer_minutes
   });
   const bookingRequirements = normalizeBookingRequirements(source.booking_requirements, source.required_booking_fields);
+  const appointmentServices = normalizeAppointmentServices(source.appointment_services);
   return {
     version: APPOINTMENT_SETTINGS_VERSION,
     revision: integer(source.revision, 0, 0, Number.MAX_SAFE_INTEGER),
@@ -471,6 +664,7 @@ function normalizeAppointmentSettings(input, options) {
     reminder_policy: reminderPolicy,
     booking_policy: bookingPolicy,
     booking_requirements: bookingRequirements,
+    appointment_services: appointmentServices,
     required_booking_fields: compileBookingRequirements(bookingRequirements),
     default_duration_minutes: bookingPolicy.default_duration_minutes,
     buffer_minutes: bookingPolicy.buffer_minutes,
@@ -504,6 +698,7 @@ function appointmentSettingsFromOnboarding(onboarding, options) {
     };
   }
   if (!Array.isArray(source.booking_requirements)) source.booking_requirements = answerSetup.booking_requirements;
+  if (!Array.isArray(source.appointment_services)) source.appointment_services = answerSetup.appointment_services;
   if (!source.required_booking_fields) source.required_booking_fields = answerSetup.required_booking_fields;
   if (!source.reminder_policy) {
     const channel = text(configuration.reminder_channel || answerSetup.reminder_channel, 40).toLowerCase();
@@ -546,11 +741,17 @@ function updateAppointmentSettings(currentInput, patchInput, options) {
     booking_requirements: Object.prototype.hasOwnProperty.call(patch, "booking_requirements")
       ? patch.booking_requirements
       : current.booking_requirements,
+    appointment_services: Object.prototype.hasOwnProperty.call(patch, "appointment_services")
+      ? patch.appointment_services
+      : current.appointment_services,
     reminder_policy: normalizeReminderPolicy(patch.reminder_policy, current.reminder_policy, now),
     updated_at: now,
     updated_by: text(optionsValue.actor, 160)
   };
-  return normalizeAppointmentSettings(merged, { now });
+  const updated = normalizeAppointmentSettings(merged, { now });
+  const invalidService = updated.appointment_services.map(validateAppointmentService).find(function (result) { return !result.ok; });
+  if (invalidService) throw new AppointmentOperationsError(invalidService.error, 422, { appointment_service: invalidService.service || null });
+  return updated;
 }
 
 function appointmentIdentity(appointment) {
@@ -770,17 +971,24 @@ module.exports = {
   appointmentSettingsFromOnboarding,
   compileAvailabilityRules,
   compileBookingRequirements,
+  compileDepositPolicy,
+  compileAppointmentServices,
   deriveAppointmentReminderStatus,
   evaluateScheduleException,
   materializeAppointmentReminders,
   normalizeAppointmentSettings,
+  normalizeAppointmentServices,
   normalizeBookingPolicy,
   normalizeBookingRequirements,
+  normalizeDepositPolicy,
   normalizeReminder,
   normalizeReminderPolicy,
   reminderId,
   reminderSnapshot,
   timingOffsets,
   updateAppointmentSettings,
+  findAppointmentService,
+  validateAppointmentService,
+  validateDepositPolicy,
   validateBookingRequirements
 };

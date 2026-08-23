@@ -9,14 +9,18 @@ const {
   appointmentSettingsFromOnboarding,
   compileAvailabilityRules,
   compileBookingRequirements,
+  compileAppointmentServices,
   deriveAppointmentReminderStatus,
   evaluateScheduleException,
   materializeAppointmentReminders,
   normalizeAppointmentSettings,
   normalizeBookingRequirements,
+  normalizeAppointmentServices,
   reminderSnapshot,
   timingOffsets,
   updateAppointmentSettings,
+  validateAppointmentService,
+  findAppointmentService,
   validateBookingRequirements
 } = require("./appointment-operations");
 
@@ -70,6 +74,29 @@ const isolatedTenantRequirements = normalizeBookingRequirements([
 assert.strictEqual(validateBookingRequirements(isolatedTenantRequirements, {}, {}).missing[0].id, "sede");
 assert.strictEqual(configuredRequirements.some(function (row) { return row.id === "sede"; }), false);
 
+const appointmentServices = normalizeAppointmentServices([{
+  id: "consulta_inicial",
+  name: "Consulta inicial",
+  duration_minutes: 45,
+  price_cop: 250000,
+  modality: "both",
+  address: "Calle 10 # 20-30, Bogotá",
+  virtual_link: "https://meet.example/consulta",
+  deposit: { required: true, mode: "fixed", amount: 50000 },
+  payment_methods: [
+    { type: "bank_transfer", active: true, instructions: "Transferir a la cuenta de Clínica A y enviar comprobante." },
+    { type: "payment_link", active: true, instructions: "Solicita el enlace seguro al equipo." },
+    { type: "cash", active: false },
+    { type: "custom", id: "reception", label: "Pago en recepción", active: true, instructions: "Paga en recepción antes de entrar." }
+  ]
+}]);
+assert.strictEqual(validateAppointmentService(appointmentServices[0]).ok, true);
+assert.strictEqual(appointmentServices[0].payment_methods.filter(function (row) { return row.active; }).length, 3);
+assert.match(compileAppointmentServices(appointmentServices), /\$50\.000 COP/);
+assert.match(compileAppointmentServices(appointmentServices), /Pago en recepción/);
+assert.strictEqual(findAppointmentService(appointmentServices, "consulta_inicial").service.name, "Consulta inicial");
+assert.strictEqual(validateAppointmentService({ name: "Consulta", duration_minutes: 30, price_cop: 100000, modality: "virtual", virtual_link: "https://meet.example", deposit: { required: true, amount: 0 }, payment_methods: [] }).error, "appointment_service_payment_method_required");
+
 const normalized = normalizeAppointmentSettings({
   revision: 3,
   scheduling_rules: [
@@ -109,6 +136,7 @@ assert.strictEqual(partialBlocked.available_until, "12:00");
 
 const updated = updateAppointmentSettings(normalized, {
   booking_policy: { default_duration_minutes: 60, buffer_minutes: 20 },
+  appointment_services: appointmentServices,
   reminder_policy: { max_attempts: 3 },
   booking_requirements: configuredRequirements,
   scheduling_rules: normalized.scheduling_rules.concat([{ text: "Atender sábados en la mañana." }])
@@ -118,6 +146,7 @@ assert.strictEqual(updated.updated_by, "admin@tenant-a.test");
 assert.strictEqual(updated.scheduling_rules.length, 3);
 assert.strictEqual(updated.reminder_policy.max_attempts, 3);
 assert.deepStrictEqual(updated.booking_policy, { default_duration_minutes: 60, buffer_minutes: 20 });
+assert.strictEqual(updated.appointment_services[0].deposit.amount, 50000);
 assert.strictEqual(updated.booking_requirements.some(function (row) { return row.id === "primera_cita" && row.required; }), true);
 assert.throws(function () {
   updateAppointmentSettings(updated, {}, { expectedRevision: 3, now: NOW });

@@ -1,8 +1,10 @@
 "use strict";
 
 const {
+  compileAppointmentServices,
   compileBookingRequirements,
-  normalizeBookingRequirements
+  normalizeBookingRequirements,
+  normalizeAppointmentServices
 } = require("./appointment-operations");
 
 const DEFAULT_ONBOARDING = Object.freeze({
@@ -124,6 +126,7 @@ const DEFAULT_ONBOARDING = Object.freeze({
     availability_rules: "",
     required_booking_fields: "",
     booking_requirements: [],
+    appointment_services: [],
     minimum_booking_notice: "",
     maximum_booking_window: "",
     booking_confirmation_mode: "",
@@ -200,7 +203,7 @@ const CUSTOMER_SETUP_QUESTIONS = Object.freeze([
   { id: "appointment_forbidden_topics", path: "appointment_setup.forbidden_topics", section: "appointments_rules", order: 310, active: true, required: true, type: "textarea", label: "Temas que debe evitar" },
   { id: "appointment_escalation_triggers", path: "appointment_setup.escalation_triggers", section: "appointments_rules", order: 320, active: true, required: true, type: "textarea", label: "Cuándo debe pedir ayuda" },
   { id: "appointment_escalation_contact", path: "appointment_setup.escalation_contact", section: "appointments_rules", order: 330, active: true, required: true, type: "text", label: "Responsable de apoyo humano" },
-  { id: "appointment_services", path: "appointment_setup.services", section: "appointments_knowledge", order: 400, active: true, required: true, type: "textarea", label: "Servicios que se pueden reservar" },
+  { id: "appointment_services", path: "appointment_setup.appointment_services", section: "appointments_knowledge", order: 400, active: true, required: true, type: "textarea", label: "Servicios y reglas de reserva" },
   { id: "appointment_business_hours", path: "appointment_setup.business_hours", section: "appointments_knowledge", order: 410, active: true, required: true, type: "textarea", label: "Horario general de atención" },
   { id: "appointment_payment_methods", path: "appointment_setup.payment_methods", section: "appointments_knowledge", order: 420, active: true, required: false, type: "textarea", label: "Métodos de pago" },
   { id: "appointment_faqs", path: "appointment_setup.faqs", section: "appointments_knowledge", order: 430, active: true, required: false, type: "textarea", label: "Preguntas frecuentes" },
@@ -641,6 +644,7 @@ function normalizeOnboarding(input) {
         appointmentSetup.booking_requirements,
         appointmentSetup.required_booking_fields
       ),
+      appointment_services: normalizeAppointmentServices(appointmentSetup.appointment_services),
       minimum_booking_notice: text(appointmentSetup.minimum_booking_notice, 500),
       maximum_booking_window: text(appointmentSetup.maximum_booking_window, 500),
       booking_confirmation_mode: choice(appointmentSetup.booking_confirmation_mode, ["automatic", "manual_approval", "depends", ""], ""),
@@ -932,10 +936,10 @@ function buildAppointmentSystemPrompt(configuration) {
     ["Duración predeterminada de cada cita", config.default_duration_minutes ? config.default_duration_minutes + " minutos" : ""],
     ["Separación mínima entre citas", config.buffer_minutes != null ? config.buffer_minutes + " minutos" : ""],
     ["Datos antes de confirmar", compileBookingRequirements(config.booking_requirements)],
+    ["Servicios y reglas", compileAppointmentServices(config.appointment_services)],
     ["Confirmación de reserva", config.booking_confirmation_mode],
     ["Cancelaciones y cambios", config.cancellation_policy],
-    ["No-show", config.no_show_policy],
-    ["Pagos para reservar", config.booking_payment_details]
+    ["No-show", config.no_show_policy]
   ]);
   addConfigurationSection(lines, "CALENDARIO Y CANALES", [
     ["Zona horaria del negocio", config.time_zone],
@@ -1015,6 +1019,7 @@ function normalizeAppointmentConfiguration(input, meta) {
     settings_last_error: text(source.settings_last_error, 500),
     required_booking_fields: text(source.required_booking_fields, 4000),
     booking_requirements: normalizeBookingRequirements(source.booking_requirements, source.required_booking_fields),
+    appointment_services: normalizeAppointmentServices(source.appointment_services),
     minimum_booking_notice: text(source.minimum_booking_notice, 1200),
     maximum_booking_window: text(source.maximum_booking_window, 1200),
     booking_confirmation_mode: text(source.booking_confirmation_mode, 1200),
@@ -1103,12 +1108,12 @@ function generateAppointmentConfiguration(input, meta) {
     revision: appointment.revision,
     required_booking_fields: appointment.required_booking_fields,
     booking_requirements: appointment.booking_requirements,
+    appointment_services: appointment.appointment_services,
     minimum_booking_notice: appointment.minimum_booking_notice,
     maximum_booking_window: appointment.maximum_booking_window,
     booking_confirmation_mode: appointment.booking_confirmation_mode,
     cancellation_policy: appointment.cancellation_policy,
     no_show_policy: appointment.no_show_policy,
-    booking_payment_details: appointment.booking_payment_details || appointment.booking_payment_required,
     time_zone: appointment.time_zone || "America/Bogota",
     calendar_provider: appointment.calendar_provider,
     calendar_email: appointment.calendar_email,
@@ -1173,7 +1178,7 @@ const APPOINTMENT_STAGE1_REQUIRED_PATHS = [
   "appointment_setup.forbidden_topics",
   "appointment_setup.escalation_triggers",
   "appointment_setup.escalation_contact",
-  "appointment_setup.services",
+  "appointment_setup.appointment_services",
   "appointment_setup.business_hours",
   "appointment_setup.staff_mode",
   "appointment_setup.appointment_locations",
@@ -1208,6 +1213,14 @@ function requiredPathsForAnswers(input, questionnaire) {
       required = required.concat(["commerce.store_url"]);
     }
     if (answers.commerce.platform === "other") required = required.concat(["commerce.other_platform"]);
+  }
+  // Records created before v429 used one free-text services answer. Preserve
+  // their ability to finish/reopen setup, but only the structured editor can
+  // create live service rules for new setups.
+  if ((answers.setup_goal === "appointments" || answers.setup_goal === "both") &&
+      !isAnsweredValue(getPath(answers, "appointment_setup.appointment_services")) &&
+      isAnsweredValue(getPath(answers, "appointment_setup.services"))) {
+    required = required.filter(function (path) { return path !== "appointment_setup.appointment_services"; });
   }
   return Array.from(new Set(required));
 }

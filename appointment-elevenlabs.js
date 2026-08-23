@@ -401,6 +401,14 @@ async function createElevenLabsAppointmentTools(tenantId, options) {
           additionalProperties: { type: "string" }
         },
         consultation_reason: { type: "string", description: "Servicio o motivo de la cita." },
+        service_id: { type: "string", description: "ID exacto del servicio configurado por este tenant." },
+        appointment_modality: { type: "string", enum: ["in_person", "virtual"], description: "Modalidad que eligió el cliente cuando el servicio permite ambas." },
+        deposit_payment_method_id: { type: "string", description: "ID del método de pago configurado para el anticipo, si aplica." },
+        deposit_status: {
+          type: "string",
+          enum: ["not_required", "pending", "customer_reported_paid", "verified"],
+          description: "verified solo cuando el flujo de pago autorizado verificó el anticipo; nunca por una afirmación del cliente."
+        },
         data_processing_consent: { type: "boolean", description: "True solo si el cliente autorizó tratamiento de datos." }
       }),
       ["starts_at", "duration_minutes", "consultation_reason", "data_processing_consent"]

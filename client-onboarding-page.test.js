@@ -52,6 +52,22 @@ assert.match(html, /window\.open\("about:blank","_blank"\)/);
 assert.match(html, /navigateOnboardingExternalTab\(externalTab,shopifyConnectButton\.href\)/);
 assert.doesNotMatch(html, /location\.href=shopifyConnectButton\.href/);
 
+let editHtml = "";
+renderClientOnboarding({
+  status: function () { return this; },
+  setHeader: function () { return this; },
+  send: function (value) { editHtml = value; return this; }
+}, {
+  tenant: { id: "tenant-edit", name: "Empresa editable" },
+  record: { status: "completed", completion: 100, setup_completed: true, answers: { setup_goal: "customer_service" } },
+  editMode: true,
+  returnPath: "/admin/panel?tab=setup",
+  questionnaire: { version: 1, questions: [] }
+});
+assert.match(editHtml, /<main class="setupPage" id="setupPage">/, "completed setup opens the editor when edit=1");
+assert.doesNotMatch(editHtml, /<main class="setupPage hidden" id="setupPage">/);
+assert.match(editHtml, /href="\/admin\/panel\?tab=setup"/);
+
 let partialCatalogHtml = "";
 renderClientOnboarding({
   status: function () { return this; },

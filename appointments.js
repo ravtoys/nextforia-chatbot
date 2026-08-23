@@ -24,6 +24,7 @@ const APPOINTMENT_REMINDER_STATES = new Set([
   "cancelled",
   "blocked"
 ]);
+const DEPOSIT_STATUSES = new Set(["not_required", "pending", "customer_reported_paid", "verified"]);
 
 function cleanText(value, max) {
   return String(value == null ? "" : value).trim().slice(0, max || 500);
@@ -32,6 +33,11 @@ function cleanText(value, max) {
 function cleanStatus(value) {
   const status = cleanText(value, 40).toLowerCase().replace(/[\s-]+/g, "_");
   return APPOINTMENT_STATUSES.has(status) ? status : "not_requested";
+}
+
+function cleanDepositStatus(value) {
+  const status = cleanText(value, 40).toLowerCase().replace(/[\s-]+/g, "_");
+  return DEPOSIT_STATUSES.has(status) ? status : "not_required";
 }
 
 function cleanReminderState(value) {
@@ -253,6 +259,18 @@ function normalizeAppointment(input) {
   if (Object.prototype.hasOwnProperty.call(input, "booking_requirements_version")) {
     normalized.booking_requirements_version = Math.max(1, Math.min(100, Math.round(Number(input.booking_requirements_version) || 1)));
   }
+  if (Object.prototype.hasOwnProperty.call(input, "deposit_status")) {
+    normalized.deposit_status = cleanDepositStatus(input.deposit_status);
+  }
+  const appointmentServiceId = cleanText(input.appointment_service_id, 80);
+  if (appointmentServiceId) normalized.appointment_service_id = appointmentServiceId;
+  const appointmentServiceName = cleanText(input.appointment_service_name, 160);
+  if (appointmentServiceName) normalized.appointment_service_name = appointmentServiceName;
+  if (Object.prototype.hasOwnProperty.call(input, "appointment_price_cop")) {
+    normalized.appointment_price_cop = cleanNonNegativeInteger(input.appointment_price_cop, 0);
+  }
+  const appointmentModality = cleanText(input.appointment_modality, 40).toLowerCase();
+  if (["in_person", "virtual"].includes(appointmentModality)) normalized.appointment_modality = appointmentModality;
   const customerConversationId = cleanText(input.customer_conversation_id, 200);
   if (customerConversationId) normalized.customer_conversation_id = customerConversationId;
   if (Object.prototype.hasOwnProperty.call(input, "reminder_state")) {
