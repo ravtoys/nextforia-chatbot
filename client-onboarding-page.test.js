@@ -51,6 +51,10 @@ assert.match(html, /function prepareOnboardingExternalTab\(label\)/);
 assert.match(html, /window\.open\("about:blank","_blank"\)/);
 assert.match(html, /navigateOnboardingExternalTab\(externalTab,shopifyConnectButton\.href\)/);
 assert.doesNotMatch(html, /location\.href=shopifyConnectButton\.href/);
+assert.match(html, /class="setupPage goalStepMode hidden" id="setupPage"/);
+assert.match(html, /repeat\(auto-fit,minmax\(min\(100%,220px\),1fr\)\)/);
+assert.match(html, /@media\(max-width:1020px\) and \(min-width:861px\)/);
+assert.match(html, /startSetup"\)\.onclick=function\(\)\{[^}]*render\(\)/);
 
 let partialCatalogHtml = "";
 renderClientOnboarding({
