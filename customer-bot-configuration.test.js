@@ -14,6 +14,8 @@ assert(configurationUi.clientScript.includes('["shipping","Datos para un envío"
 assert(configurationUi.clientScript.includes('["reminders","Recordatorio de cita o reserva","Con Tempo o Atlas"]'));
 assert(configurationUi.clientScript.includes('["appointment_requirements","Datos para confirmar una cita","Con Tempo o Atlas"]'));
 assert(configurationUi.clientScript.includes('["appointment_services","Servicios y reglas","Con Tempo o Atlas"]'));
+assert(configurationUi.clientScript.includes("Descripción del servicio"));
+assert(configurationUi.clientScript.includes("nxAttachAppointmentServiceDescriptions"));
 assert(configurationUi.clientScript.includes('/admin/panel/appointment-settings'));
 assert(configurationUi.clientScript.includes('booking_requirements:state.nxAppointmentRequirements,appointment_services:state.nxAppointmentServices'));
 assert(configurationUi.clientScript.includes('nxAppointmentServicesBody'));

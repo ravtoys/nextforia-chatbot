@@ -158,6 +158,9 @@ function normalizeAppointmentService(input, index) {
   return {
     id: serviceId(source.id || name, "service_" + (index + 1)),
     name,
+    // Customer-facing benefit copy. This stays with the tenant service so
+    // Tempo/Atlas can explain the service without inventing its value.
+    description: text(source.description, 1600),
     duration_minutes: integer(source.duration_minutes, 0, 0, 24 * 60),
     price_cop: amountCop(source.price_cop, 0),
     payment_methods: methods,
@@ -225,6 +228,7 @@ function compileAppointmentServices(servicesInput) {
     const fallback = service.virtual_link ? " · Respaldo virtual: configurado" : " · Sin respaldo virtual";
     const modality = service.modality === "in_person" ? "Presencial: " + service.address : service.modality === "virtual" ? "Virtual" + fallback : "Presencial: " + service.address + " · Virtual" + fallback + " (el cliente elige)";
     lines.push("- " + service.name + " [" + service.id + "]: " + service.duration_minutes + " minutos · " + formatCop(service.price_cop) + " · " + modality + ".");
+    if (service.description) lines.push("  Descripción aprobada por el negocio: " + service.description + " Úsala para explicar con claridad el beneficio para el cliente; no inventes promesas, alcance ni resultados.");
     if (service.deposit.required) {
       const deposit = service.deposit.mode === "percentage" ? service.deposit.amount + "% del valor de la cita" : formatCop(service.deposit.amount);
       lines.push("  Anticipo obligatorio: " + deposit + ". Métodos: " + service.payment_methods.filter(function (method) { return method.active; }).map(function (method) { return method.label + " — " + method.instructions; }).join(" | ") + ". No confirmar sin pago verificado.");

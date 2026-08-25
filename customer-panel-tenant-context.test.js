@@ -95,7 +95,7 @@ assert(atlas.includes("Configuración"));
 assert(atlas.includes("Cómo agendar"));
 assert(!atlas.includes('<span>Config.</span>'));
 assert(atlas.includes('id="mnav-appointment-reminders"'));
-assert(atlas.includes('id="mnav-appointment-settings"'));
+assert(!atlas.includes('id="mnav-appointment-settings"'), "la navegación móvil de citas debe tener exactamente Panel, Agenda, Chats, Recordatorios y Mi perfil");
 assert(atlas.includes("openAppointmentConversations()"));
 assert(atlas.includes('data-appt-nav="conversations"'), "conversaciones debe participar en el estado exclusivo del menú de citas");
 assert(atlas.includes('data-appt-mobile="conversations"'), "el menú móvil debe compartir el mismo estado exclusivo");
@@ -109,7 +109,7 @@ const tempoInbox = render({
 assert(tempoInbox.includes('INITIAL_TAB="conversations"'), "un tenant de citas puede abrir el inbox compartido");
 assert(tempoInbox.includes('id="panel-inbox"'));
 assert(tempoInbox.includes('id="nav-appointment-conversations"'));
-assert(tempoInbox.includes('id="mnav-appointment-settings"'));
+assert(!tempoInbox.includes('id="mnav-appointment-settings"'));
 assert(!tempoInbox.includes('id="nav-orders"'));
 
 const escaped = render({

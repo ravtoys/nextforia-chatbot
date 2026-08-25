@@ -64,6 +64,10 @@ assert(/\.notificationCard\{grid-template-columns:40px minmax\(0,1fr\)[^}]*overf
   "la tarjeta de notificación móvil debe reservar espacio al texto");
 assert(/\.notificationCopy\{min-width:0\}/.test(html),
   "el texto de notificaciones debe poder encogerse dentro de la grilla");
+assert(/\.notificationDismiss\{top:9px;right:8px\}/.test(html),
+  "el cierre de cada notificación debe caber también en móvil");
+assert(!/\.panel-redesign \.mobileTabbar button\{display:grid!important/.test(html),
+  "un tenant Atlas no puede mostrar la navegación de ambos bots a la vez");
 assert(/\.notificationEmailType\{[^}]*grid-template-columns:22px minmax\(0,1fr\)/.test(html),
   "cada alerta debe reservar una columna real para el texto");
 assert(/\.notificationEmailTypeCopy\{min-width:0\}/.test(html),

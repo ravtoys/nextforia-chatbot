@@ -433,7 +433,7 @@ app.get("/admin/terms", (req, res) => res.type("html").send(renderTermsOfService
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────────
 const PRODUCT_NAME = "NextforIA Chatbot";
-const BOT_VERSION = "v453-appointment-meeting-panel";  // bump cada release; usado por endpoints /admin/*
+const BOT_VERSION = "v459-tenant-configuration-receipt";  // bump cada release; usado por endpoints /admin/*
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "";
 const DASHBOARD_KEY = process.env.DASHBOARD_KEY || "";
 const DASHBOARD_SESSION_COOKIE = "nextforia_dashboard_session";
@@ -16647,6 +16647,7 @@ app.get("/admin/customer-setups/:tenantId", async (req, res) => {
       tenant,
       onboarding,
       review: setupReviewSummary(onboarding),
+      configuration_verification: appointmentConfigurationVerification(tenant.id, onboarding),
       questionnaire,
       channels,
       appointment_integrations: await appointmentIntegrationsForRecord(onboarding, tenant.id, channels),
@@ -16656,6 +16657,31 @@ app.get("/admin/customer-setups/:tenantId", async (req, res) => {
   } catch (error) {
     console.error("customer setup detail error:", error.message);
     res.status(error.status || 503).json({ ok: false, error: error.message === "tenant_not_found" ? "tenant_not_found" : "setup_review_unavailable" });
+  }
+});
+
+// Read-only, platform-scoped receipt.  Customer Panel sessions cannot call
+// this route; Super Admin derives the tenant from the reviewed tenant record.
+app.get("/admin/customer-setups/:tenantId/configuration-verification", async (req, res) => {
+  const auth = dashboardAuth(req);
+  if (!auth.ok || auth.role !== "super_admin") {
+    res.status(401).json({ ok: false, error: "unauthorized" });
+    return;
+  }
+  try {
+    const tenant = await setupReviewTenant(req.params.tenantId);
+    if (!tenant) {
+      res.status(404).json({ ok: false, error: "tenant_not_found" });
+      return;
+    }
+    const onboarding = await loadClientOnboarding(true, tenant.id);
+    res.json({
+      ok: true,
+      verification: appointmentConfigurationVerification(tenant.id, onboarding)
+    });
+  } catch (error) {
+    console.error("customer setup configuration verification error:", error.message);
+    res.status(503).json({ ok: false, error: "configuration_verification_unavailable" });
   }
 });
 
@@ -19348,6 +19374,63 @@ function publicAppointmentSettings(settings, configuration) {
     updated_at: settings.updated_at,
     updated_by: settings.updated_by
   };
+}
+
+// Super Admin needs an authoritative receipt for what the Customer Panel
+// actually persisted.  This is intentionally derived from the same tenant
+// onboarding record consumed by Tempo/Atlas: it creates neither a parallel
+// configuration store nor a browser-trusted tenant context.
+function appointmentConfigurationVerification(tenantId, onboarding) {
+  const cleanTenant = cleanTenantId(tenantId);
+  const settings = appointmentSettingsFromOnboarding(onboarding);
+  const configuration = onboarding && onboarding.appointment_configuration || {};
+  const services = Array.isArray(settings.appointment_services) ? settings.appointment_services : [];
+  const botContext = compileAppointmentServices(services);
+  const receipt = {
+    tenant_id: cleanTenant,
+    revision: Number(settings.revision) || 0,
+    updated_at: settings.updated_at || onboarding && (onboarding.last_updated_at || onboarding.updated_at) || null,
+    updated_by: cleanRuntimeText(settings.updated_by || onboarding && onboarding.updated_by, 160) || null,
+    persistence: SUPABASE_ENABLED ? "supabase" : "memory_test_only",
+    source: "client_onboarding_record",
+    sync_status: cleanRuntimeText(configuration.settings_sync_status, 80) || "applied",
+    synced_at: configuration.settings_synced_at || null,
+    bot_context_ready: !!botContext,
+    service_count: services.length,
+    services: services.map(function (service) {
+      const deposit = service && service.deposit || {};
+      return {
+        id: cleanRuntimeText(service && service.id, 100),
+        name: cleanRuntimeText(service && service.name, 240),
+        description: cleanRuntimeText(service && service.description, 1600),
+        active: service && service.active !== false,
+        duration_minutes: Number(service && service.duration_minutes) || 0,
+        price_cop: Number(service && service.price_cop) || 0,
+        modality: cleanRuntimeText(service && service.modality, 40),
+        deposit_required: !!deposit.required,
+        payment_methods: (Array.isArray(service && service.payment_methods) ? service.payment_methods : []).filter(function (method) {
+          return method && method.active !== false;
+        }).map(function (method) {
+          // Do not return payment instructions or account details in an audit
+          // receipt. Their presence is verifiable without re-exposing them.
+          return {
+            id: cleanRuntimeText(method.id || method.type, 100),
+            label: cleanRuntimeText(method.label || method.type, 160),
+            instructions_configured: !!cleanRuntimeText(method.instructions, 2000)
+          };
+        })
+      };
+    })
+  };
+  receipt.fingerprint = crypto.createHash("sha256").update(JSON.stringify({
+    tenant_id: receipt.tenant_id,
+    revision: receipt.revision,
+    updated_at: receipt.updated_at,
+    services: receipt.services,
+    bot_context: botContext
+  })).digest("hex").slice(0, 16);
+  receipt.verified_at = new Date().toISOString();
+  return receipt;
 }
 
 function appointmentReminderMetrics(snapshot) {

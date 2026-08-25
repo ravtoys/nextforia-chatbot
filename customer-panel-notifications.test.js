@@ -19,6 +19,10 @@ renderCustomerPanel(res, {
 
 assert(html.includes("function notificationCardKey"));
 assert(html.includes("function notificationActionUrl"));
+assert(html.includes("function dismissNotification"));
+assert(html.includes('class="notificationDismiss"'));
+assert(html.includes('onclick="closeHandoffAlert()"'));
+assert(html.includes("function closeHandoffAlert"));
 assert(html.includes('data-action-url="'));
 assert(html.includes('notificationAction(this.dataset.actionUrl,this.dataset.notificationId)'));
 assert(html.includes('new EventSource("/admin/panel/notifications/events")'));

@@ -129,6 +129,7 @@ async function seedAppointment(base, secret, agentId, customerName) {
       PORT: String(port),
       NODE_ENV: "test",
       DASHBOARD_SESSION_SECRET: "appointment-panel-v2-session-secret",
+      DASHBOARD_KEY: "appointment-panel-v2-super-admin-key",
       VERIFY_TOKEN: "appointment-panel-v2-verify-token",
       WA_TOKEN: "appointment-panel-v2-not-used",
       ANTHROPIC_API_KEY: "appointment-panel-v2-not-used",
@@ -191,6 +192,7 @@ async function seedAppointment(base, secret, agentId, customerName) {
           appointment_services: [{
             id: "consulta_inicial",
             name: "Consulta inicial",
+            description: "Recibe una ruta clara para cuidar tu sonrisa desde el primer paso.",
             duration_minutes: 45,
             price_cop: 250000,
             modality: "virtual",
@@ -217,7 +219,26 @@ async function seedAppointment(base, secret, agentId, customerName) {
     assert.strictEqual(payload.settings.cancellation_policy, "Reprogramar con mínimo 6 horas de anticipación.");
     assert.strictEqual(payload.settings.appointment_services[0].deposit.amount, 50000);
     assert.strictEqual(payload.settings.appointment_services[0].payment_methods.filter(function (row) { return row.active; }).length, 2);
+    assert.strictEqual(payload.settings.appointment_services[0].description, "Recibe una ruta clara para cuidar tu sonrisa desde el primer paso.");
     const revisionAfterFirstSave = payload.revision;
+
+    response = await fetch(base + "/admin/customer-setups/appointment-tenant-a/configuration-verification", {
+      headers: { "x-dashboard-key": "appointment-panel-v2-super-admin-key" }
+    });
+    assert.strictEqual(response.status, 200, "Super Admin must be able to verify the canonical tenant record");
+    const verification = await response.json();
+    assert.strictEqual(verification.verification.tenant_id, "appointment-tenant-a");
+    assert.strictEqual(verification.verification.persistence, "memory_test_only");
+    assert.strictEqual(verification.verification.service_count, 1);
+    assert.strictEqual(verification.verification.services[0].name, "Consulta inicial");
+    assert.strictEqual(verification.verification.services[0].description, "Recibe una ruta clara para cuidar tu sonrisa desde el primer paso.");
+    assert.strictEqual(verification.verification.services[0].payment_methods[0].instructions_configured, true);
+    assert(verification.verification.fingerprint, "verification must include a backend receipt fingerprint");
+
+    response = await fetch(base + "/admin/customer-setups/appointment-tenant-a/configuration-verification", {
+      headers: { cookie: cookieA }
+    });
+    assert.strictEqual(response.status, 401, "tenant sessions must not access platform verification");
 
     response = await fetch(base + "/admin/panel/appointment-settings", {
       method: "PUT",

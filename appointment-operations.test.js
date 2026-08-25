@@ -77,6 +77,7 @@ assert.strictEqual(configuredRequirements.some(function (row) { return row.id ==
 const appointmentServices = normalizeAppointmentServices([{
   id: "consulta_inicial",
   name: "Consulta inicial",
+  description: "Saldrás con claridad sobre el siguiente paso para cuidar tu sonrisa.",
   duration_minutes: 45,
   price_cop: 250000,
   modality: "both",
@@ -93,11 +94,13 @@ const appointmentServices = normalizeAppointmentServices([{
   ]
 }]);
 assert.strictEqual(validateAppointmentService(appointmentServices[0]).ok, true);
+assert.strictEqual(appointmentServices[0].description, "Saldrás con claridad sobre el siguiente paso para cuidar tu sonrisa.");
 assert.strictEqual(appointmentServices[0].directions, "Entrada por la recepción del edificio.");
 assert.match(appointmentServices[0].maps_link, /maps\.google/);
 assert.strictEqual(appointmentServices[0].payment_methods.filter(function (row) { return row.active; }).length, 3);
 assert.match(compileAppointmentServices(appointmentServices), /\$50\.000 COP/);
 assert.match(compileAppointmentServices(appointmentServices), /Pago en recepción/);
+assert.match(compileAppointmentServices(appointmentServices), /Descripción aprobada por el negocio/);
 assert.strictEqual(findAppointmentService(appointmentServices, "consulta_inicial").service.name, "Consulta inicial");
 assert.strictEqual(validateAppointmentService({ name: "Consulta", duration_minutes: 30, price_cop: 100000, modality: "virtual", virtual_link: "https://meet.example", deposit: { required: true, amount: 0 }, payment_methods: [] }).error, "appointment_service_payment_method_required");
 assert.strictEqual(validateAppointmentService({ name: "Videollamada", duration_minutes: 30, modality: "virtual" }).ok, true, "a virtual fallback is optional because Meet is generated per appointment");
