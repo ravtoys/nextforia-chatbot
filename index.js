@@ -216,6 +216,7 @@ const {
   USE_CASES: META_OUT_OF_WINDOW_USE_CASES,
   createMetaMessageHub
 } = require("./meta-message-hub");
+const { createMetaVoiceHub } = require("./meta-voice-hub");
 const {
   AppointmentOperationsError,
   applyReminderAction,
@@ -432,7 +433,7 @@ app.get("/admin/terms", (req, res) => res.type("html").send(renderTermsOfService
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────────
 const PRODUCT_NAME = "NextforIA Chatbot";
-const BOT_VERSION = "v450-legacy-appointment-meet-repair";  // bump cada release; usado por endpoints /admin/*
+const BOT_VERSION = "v453-appointment-meeting-panel";  // bump cada release; usado por endpoints /admin/*
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "";
 const DASHBOARD_KEY = process.env.DASHBOARD_KEY || "";
 const DASHBOARD_SESSION_COOKIE = "nextforia_dashboard_session";
@@ -732,6 +733,11 @@ const OPENAI_API_KEY = String(process.env.OPENAI_API_KEY || "").trim();
 const MULTIMODAL_CONFIG = multimodalConfigFromEnv(process.env);
 const OPENAI_TRANSCRIPTION_MODEL = String(process.env.OPENAI_TRANSCRIPTION_MODEL || "gpt-4o-mini-transcribe").trim();
 const OPENAI_VISION_MODEL = String(process.env.OPENAI_VISION_MODEL || "gpt-4.1-mini").trim();
+const VOICE_RESPONSES_ENABLED = process.env.VOICE_RESPONSES_ENABLED === "1";
+const VOICE_RESPONSE_PROVIDER = String(process.env.VOICE_RESPONSE_PROVIDER || "openai").trim().toLowerCase();
+const OPENAI_TTS_MODEL = String(process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts").trim();
+const OPENAI_TTS_VOICE = String(process.env.OPENAI_TTS_VOICE || "alloy").trim();
+const VOICE_RESPONSE_MAX_CHARS = boundedEnvInt("VOICE_RESPONSE_MAX_CHARS", 2400, 80, 4000);
 const multimodalAgent = createMultimodalAgent(MULTIMODAL_CONFIG);
 const ADAPTIVE_TOKEN_LIMITS = {
   standard: {
@@ -877,6 +883,8 @@ if (PAYMENTS_V1_ENABLED && (!Number.isFinite(WOMPI_ESTIMATED_FEE_TAX_RATE) || WO
 }
 if (MULTIMODAL_CONFIG.enabled && (MULTIMODAL_CONFIG.voice_input_enabled || MULTIMODAL_CONFIG.image_input_enabled) && !OPENAI_API_KEY) productionConfigErrors.push("OPENAI_API_KEY is required when multimodal voice or image input is enabled");
 if (MULTIMODAL_CONFIG.enabled && MULTIMODAL_CONFIG.voice_replies_enabled && !ELEVENLABS_API_KEY) productionConfigErrors.push("ELEVENLABS_API_KEY is required when multimodal voice replies are enabled");
+if (VOICE_RESPONSES_ENABLED && VOICE_RESPONSE_PROVIDER !== "openai") productionConfigErrors.push("VOICE_RESPONSE_PROVIDER=openai is required for shared voice responses");
+if (VOICE_RESPONSES_ENABLED && !OPENAI_API_KEY) productionConfigErrors.push("OPENAI_API_KEY is required when VOICE_RESPONSES_ENABLED=1");
 if (productionConfigErrors.length) {
   console.error("Secure configuration failed:\n- " + productionConfigErrors.join("\n- "));
   process.exit(1);
@@ -5087,7 +5095,8 @@ HUMANO DIRECTO:
 HORARIOS (solo si preguntan, responde con este formato cool): "🕐 *Nuestros horarios*\n\nDom–Mié: 11:00 am – 8:00 pm\nJue–Sáb: 10:00 am – 9:00 pm\nFestivos: horario de domingo (11am–8pm)\n\n¡Te esperamos! 🌴"
 
 NOTAS DE VOZ:
-- Si mandan audio: "No puedo escuchar audio 😊 ¿Me escribes qué buscas?"
+- Si el sistema te entrega una transcripción de audio, úsala como el mensaje del cliente y responde normalmente.
+- Si el cliente pide explícitamente una respuesta por audio o nota de voz, usa request_voice_response y después redacta la respuesta normal.
 
 NUNCA INVENTES: precios, productos, links, stock, políticas, ni datos del cliente.`;
 
@@ -5306,8 +5315,24 @@ const APPOINTMENT_TOOLS = [
       required: ["starts_at", "duration_minutes", "data_processing_consent"]
     }
   },
+  {
+    name: "request_voice_response",
+    description: "Solicita que la respuesta final de ESTE turno se envíe como un mensaje de voz reproducible. Úsala solo si el cliente pide explícitamente una respuesta por audio, nota de voz o voz. No pongas el texto en esta herramienta: redacta la respuesta normal después de solicitarla. Si el canal no soporta voz, Nextfor enviará automáticamente ese mismo texto.",
+    input_schema: { type: "object", properties: {}, required: [] }
+  },
   TOOLS.find(function (tool) { return tool.name === "request_human_handoff"; })
 ].filter(Boolean);
+
+const VOICE_RESPONSE_TOOL = APPOINTMENT_TOOLS.find(function (tool) {
+  return tool && tool.name === "request_voice_response";
+});
+
+const VOICE_RESPONSE_OPERATIONAL_PROMPT = [
+  "RESPUESTAS POR VOZ:",
+  "- Si el cliente pide explícitamente que le respondas por audio o nota de voz, usa request_voice_response y luego redacta la misma respuesta breve y natural.",
+  "- No uses voz para datos sensibles, instrucciones de pago, números de documentos, enlaces de pago ni mensajes que requieran revisión humana.",
+  "- Si no pide voz, responde por texto normalmente."
+].join("\n");
 
 const CUSTOMER_PROFILE_TOOL = {
   name: "save_customer_profile",
@@ -6153,6 +6178,54 @@ async function sendText(to, text, options) {
   }
 }
 
+function voiceReplyIdempotencyKey(to, text, runtime, source) {
+  const tenantId = cleanTenantId(runtime && (runtime.tenantId || runtime.tenant_id));
+  const eventId = cleanRuntimeText(runtime && (runtime.sourceEventId || runtime.source_event_id), 500) || "conversation";
+  return "bot-voice:" + crypto.createHash("sha256").update([
+    tenantId,
+    conversationChannel(to),
+    cleanRuntimeText(source, 40),
+    normalizeConversationUserId(to),
+    eventId,
+    String(text || "")
+  ].join("\u001f")).digest("hex").slice(0, 48);
+}
+
+async function sendVoiceResponseOrText(to, text, runtime, source, idempotencyKey) {
+  const tenantId = cleanTenantId(runtime && (runtime.tenantId || runtime.tenant_id));
+  const channel = conversationChannel(to);
+  try {
+    const delivery = await metaVoiceHub.request({
+      tenant_id: tenantId,
+      channel,
+      source,
+      recipient: to,
+      text,
+      idempotency_key: cleanRuntimeText(idempotencyKey, 240) || voiceReplyIdempotencyKey(to, text, runtime, source)
+    });
+    if (conversationTurnContext.isActive()) conversationTurnContext.push("tools", "voice_response_sent");
+    log("info", "meta_voice_response_delivered", {
+      tenant_id: tenantId,
+      channel,
+      source,
+      provider_message_id_suffix: String(delivery && delivery.provider_message_id || "").slice(-16) || null,
+      audio_bytes: Number(delivery && delivery.audio_bytes) || null
+    });
+    return { ok: true, mode: "voice", delivery };
+  } catch (error) {
+    const code = cleanRuntimeText(error && (error.code || error.message), 120) || "voice_delivery_failed";
+    if (conversationTurnContext.isActive()) conversationTurnContext.push("tools", "voice_response_fallback:" + code);
+    log("warn", "meta_voice_response_fallback", {
+      tenant_id: tenantId,
+      channel,
+      source,
+      code
+    });
+    const sent = await sendText(to, text, runtime);
+    return { ok: !!sent, mode: "text_fallback", error: code };
+  }
+}
+
 function findTemplateDefinition(name) {
   return WHATSAPP_TEMPLATES.find(function (template) {
     return template.name === name;
@@ -6303,6 +6376,82 @@ async function sendMetaHubWhatsAppTemplate(runtime, recipient, template, paramet
   return { provider_message_id: cleanRuntimeText(message && message.id, 500), response: response.data };
 }
 
+async function generateSharedVoiceAudio(input) {
+  const text = cleanRuntimeText(input && input.text, VOICE_RESPONSE_MAX_CHARS);
+  if (!VOICE_RESPONSES_ENABLED) {
+    const error = new Error("voice_responses_disabled");
+    error.code = "voice_responses_disabled";
+    error.status = 409;
+    throw error;
+  }
+  if (VOICE_RESPONSE_PROVIDER !== "openai" || !OPENAI_API_KEY) {
+    const error = new Error("voice_provider_unavailable");
+    error.code = "voice_provider_unavailable";
+    error.status = 503;
+    throw error;
+  }
+  if (!text) {
+    const error = new Error("voice_text_required");
+    error.code = "voice_text_required";
+    error.status = 422;
+    throw error;
+  }
+  try {
+    const response = await axios.post("https://api.openai.com/v1/audio/speech", {
+      model: OPENAI_TTS_MODEL,
+      voice: OPENAI_TTS_VOICE,
+      input: text,
+      response_format: "opus"
+    }, {
+      headers: { Authorization: "Bearer " + OPENAI_API_KEY, "Content-Type": "application/json" },
+      responseType: "arraybuffer",
+      timeout: 30000,
+      maxContentLength: 16 * 1024 * 1024,
+      maxBodyLength: 16 * 1024 * 1024
+    });
+    return {
+      buffer: Buffer.from(response.data),
+      mime_type: "audio/ogg; codecs=opus",
+      filename: "nextfor-response.ogg"
+    };
+  } catch (error) {
+    const wrapped = new Error("voice_audio_generation_failed");
+    wrapped.code = "voice_audio_generation_failed";
+    wrapped.status = 502;
+    wrapped.details = { provider: "openai", reason: cleanRuntimeText(error && error.response && error.response.data || error && error.message, 160) };
+    throw wrapped;
+  }
+}
+
+async function uploadMetaHubWhatsAppAudio(runtime, audio) {
+  const phoneNumberId = cleanRuntimeText(runtime && (runtime.phoneNumberId || runtime.phone_number_id), 240);
+  const accessToken = cleanRuntimeText(runtime && (runtime.accessToken || runtime.access_token), 4096);
+  if (!phoneNumberId || !accessToken) throw new Error("whatsapp_voice_upload_scope_incomplete");
+  const form = new FormData();
+  form.append("messaging_product", "whatsapp");
+  form.append("file", new Blob([audio.buffer], { type: audio.mime_type }), audio.filename || "nextfor-response.ogg");
+  const response = await axios.post(
+    `https://graph.facebook.com/${META_GRAPH_VERSION}/${encodeURIComponent(phoneNumberId)}/media`,
+    form,
+    { headers: { Authorization: `Bearer ${accessToken}` }, timeout: 20000, maxContentLength: 16 * 1024 * 1024, maxBodyLength: 16 * 1024 * 1024 }
+  );
+  return { media_id: cleanRuntimeText(response.data && response.data.id, 500), response: response.data };
+}
+
+async function sendMetaHubWhatsAppAudio(runtime, recipient, mediaId) {
+  const phoneNumberId = cleanRuntimeText(runtime && (runtime.phoneNumberId || runtime.phone_number_id), 240);
+  const accessToken = cleanRuntimeText(runtime && (runtime.accessToken || runtime.access_token), 4096);
+  const to = normalizeConversationUserId(recipient);
+  if (!phoneNumberId || !accessToken || !to || !mediaId) throw new Error("whatsapp_voice_delivery_scope_incomplete");
+  const response = await axios.post(
+    `https://graph.facebook.com/${META_GRAPH_VERSION}/${encodeURIComponent(phoneNumberId)}/messages`,
+    { messaging_product: "whatsapp", recipient_type: "individual", to, type: "audio", audio: { id: mediaId } },
+    { headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" }, timeout: 15000 }
+  );
+  const message = response.data && response.data.messages && response.data.messages[0];
+  return { provider_message_id: cleanRuntimeText(message && message.id, 500), response: response.data };
+}
+
 async function sendMetaHubMessengerTagged(runtime, recipient, text, tag) {
   const pageId = cleanRuntimeText(runtime && (runtime.pageId || runtime.page_id), 240);
   const accessToken = cleanRuntimeText(runtime && (runtime.accessToken || runtime.access_token), 4096);
@@ -6350,6 +6499,14 @@ const metaMessageHub = createMetaMessageHub({
   sendWhatsAppTemplate: sendMetaHubWhatsAppTemplate,
   sendMessengerTagged: sendMetaHubMessengerTagged,
   sendInstagramHumanAgent: sendMetaHubInstagramHumanAgent
+});
+
+const metaVoiceHub = createMetaVoiceHub({
+  store: metaMessageHubStore,
+  resolveRuntime: resolveChannelRuntimeForTenant,
+  generateAudio: generateSharedVoiceAudio,
+  uploadWhatsAppAudio: uploadMetaHubWhatsAppAudio,
+  sendWhatsAppAudio: sendMetaHubWhatsAppAudio
 });
 
 const appointmentReminderService = createAppointmentReminderService({
@@ -7860,7 +8017,15 @@ async function handleConversationInTurnContext(userId, userMessage, conversation
   const tenantId = cleanTenantId(conversationRuntime.tenantId) || DEFAULT_TENANT_ID;
   const stateKey = tenantConversationStateKey(userId, tenantId);
   async function sendBotReply(message) {
-    return sendText(userId, message, conversationRuntime);
+    const requestedVoice = VOICE_RESPONSES_ENABLED && conversationTurnContext.get("tools").includes("request_voice_response");
+    if (!requestedVoice) return sendText(userId, message, conversationRuntime);
+    const delivery = await sendVoiceResponseOrText(
+      userId,
+      message,
+      conversationRuntime,
+      routeUsesAppointmentBot ? "appointment" : "customer_service"
+    );
+    return delivery.ok;
   }
   if (userMessage.length > MAX_INBOUND_TEXT_LENGTH) {
     log("warn", "inbound_message_rejected", { user: maskedIdentifier(userId), reason: "too_long", length: userMessage.length });
@@ -8122,7 +8287,9 @@ async function handleConversationInTurnContext(userId, userMessage, conversation
     appointment_operational_prompt: routeUsesAppointmentBot ? APPOINTMENT_OPERATIONAL_PROMPT : "",
     business_tools_profile: isRavTenantId(tenantId) ? "rav" : ""
   });
-  const tenantConfigurationPrompts = runtimePolicy.prompts;
+  const tenantConfigurationPrompts = runtimePolicy.prompts.concat(
+    VOICE_RESPONSES_ENABLED ? [VOICE_RESPONSE_OPERATIONAL_PROMPT] : []
+  );
   if (!runtimePolicy.ready) {
     conversationTurnContext.push("tools", "tenant_configuration_required");
     log("error", "tenant_bot_response_blocked", {
@@ -8155,6 +8322,11 @@ async function handleConversationInTurnContext(userId, userMessage, conversation
   }
   if (!conversationTools.some(function (tool) { return tool.name === CUSTOMER_PROFILE_TOOL.name; })) {
     conversationTools.push(CUSTOMER_PROFILE_TOOL);
+  }
+  if (VOICE_RESPONSES_ENABLED && VOICE_RESPONSE_TOOL && !conversationTools.some(function (tool) {
+    return tool.name === VOICE_RESPONSE_TOOL.name;
+  })) {
+    conversationTools.push(VOICE_RESPONSE_TOOL);
   }
   if (routeUsesAppointmentBot) {
     APPOINTMENT_TOOLS.forEach(function (tool) {
@@ -8442,6 +8614,14 @@ async function handleConversationInTurnContext(userId, userMessage, conversation
                 break;
               case "book_appointment":
                 result = await executeBookAppointment(userId, tenantId, toolUse.input, "appointment_bot:" + conversationChannel(userId));
+                break;
+              case "request_voice_response":
+                result = {
+                  requested: true,
+                  delivery: "voice_if_supported_else_text",
+                  channel: conversationRuntime.channel,
+                  source: routeUsesAppointmentBot ? "appointment" : "customer_service"
+                };
                 break;
               default:
                 result = { error: "Unknown tool: " + toolUse.name };
@@ -19763,6 +19943,21 @@ function metaMessageHubServiceAuthOk(req) {
   return !!META_CONNECTION_HUB_SERVICE_SECRET && safeEqualText(supplied, META_CONNECTION_HUB_SERVICE_SECRET);
 }
 
+app.post("/admin/meta-voice-hub/send", async (req, res) => {
+  if (!customerPanelAuthOk(req, "agent")) return res.status(401).json({ ok: false, error: "unauthorized" });
+  const tenantId = customerTenantForAuth(dashboardAuth(req));
+  if (!tenantId) return res.status(403).json({ ok: false, error: "tenant_scope_required" });
+  if (!cleanRuntimeText(req.body && req.body.idempotency_key, 240)) return res.status(422).json({ ok: false, error: "idempotency_key_required" });
+  const result = await sendVoiceResponseOrText(
+    req.body && req.body.recipient,
+    req.body && req.body.text,
+    { tenant_id: tenantId, source_event_id: req.body && req.body.source_event_id },
+    req.body && req.body.source || "core_platform",
+    req.body && req.body.idempotency_key
+  );
+  res.status(result.ok ? 202 : 502).json(Object.assign({ tenant_id: tenantId }, result));
+});
+
 app.post("/internal/meta-message-hub/templates/sync", async (req, res) => {
   if (!metaMessageHubServiceAuthOk(req)) return res.status(401).json({ ok: false, error: "unauthorized" });
   const tenantId = cleanRuntimeText(req.body && req.body.tenant_id, 160);
@@ -19798,6 +19993,22 @@ app.post("/internal/meta-message-hub/send", async (req, res) => {
   } catch (error) {
     metaMessageHubErrorResponse(res, error);
   }
+});
+
+app.post("/internal/meta-voice-hub/send", async (req, res) => {
+  if (!metaMessageHubServiceAuthOk(req)) return res.status(401).json({ ok: false, error: "unauthorized" });
+  const input = req.body || {};
+  const tenantId = cleanTenantId(input.tenant_id);
+  if (!tenantId) return res.status(400).json({ ok: false, error: "tenant_id_required" });
+  if (!cleanRuntimeText(input.idempotency_key, 240)) return res.status(422).json({ ok: false, error: "idempotency_key_required" });
+  const result = await sendVoiceResponseOrText(
+    input.recipient,
+    input.text,
+    { tenant_id: tenantId, source_event_id: input.source_event_id },
+    input.source || "core_platform",
+    input.idempotency_key
+  );
+  res.status(result.ok ? 202 : 502).json(Object.assign({ tenant_id: tenantId }, result));
 });
 
 app.get("/admin/commercial-readiness", (req, res) => {

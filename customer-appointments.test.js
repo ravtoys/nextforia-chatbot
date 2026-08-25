@@ -21,6 +21,9 @@ assert.strictEqual(demo.settings.rules.length, 3);
 assert.strictEqual(demo.settings.exceptions[0].mode, "partial");
 assert.deepStrictEqual(demo.settings.booking_policy, { default_duration_minutes: 60, buffer_minutes: 15 });
 assert.strictEqual(demo.settings.reminder_policy.channel, "whatsapp");
+assert.strictEqual(demo.appointments.some(function (row) {
+  return row.virtual_link_source === "google_meet" && row.virtual_meeting_link;
+}), true);
 
 const shaped = customerAppointmentSnapshot({
   tenant_id: "tenant-a",
@@ -86,6 +89,21 @@ assert(clientScript.includes('reminder_policy'));
 assert(clientScript.includes('booking_policy'));
 assert(clientScript.includes('updateAppointmentBookingPolicy'));
 assert(clientScript.includes('booking_requirements'));
+assert(clientScript.includes('virtual_meeting_link'));
+assert(clientScript.includes('virtual_link_source'));
+assert(clientScript.includes('appointment_readiness'));
+assert(clientScript.includes('/virtual-link'));
+assert(clientScript.includes('Reemplazar enlace'));
+assert(clientScript.includes('/admin/panel/appointments-data'));
+assert(clientScript.includes('<textarea id="apptMeetingUrlInput"'));
+assert(clientScript.includes('name="appointment_meeting_link_text"'));
+assert(clientScript.includes('autocomplete="off"'));
+assert(clientScript.includes('aria-autocomplete="none"'));
+assert(clientScript.includes('data-form-type="other"'));
+assert(!clientScript.includes('calendar_event_link'));
+assert(styles.includes('apptMeetingCard'));
+assert(styles.includes('.apptMeetingEditor textarea'));
+assert(styles.includes('position:fixed;right:0;bottom:0;width:min(620px,100vw)'));
 assert(!markup.includes('id="apptRequirementList"'));
 assert(!markup.includes('Datos para confirmar la cita'));
 

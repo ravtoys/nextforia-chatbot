@@ -75,6 +75,10 @@ Plataforma multi-tenant de NextforIA para atención al cliente y agendamiento po
 | `MULTIMODAL_VOICE_INPUT_ENABLED` | Permite transcribir notas de voz de WhatsApp y pasarlas al bot como texto controlado |
 | `MULTIMODAL_IMAGE_INPUT_ENABLED` | Permite analizar imágenes de WhatsApp y pasar hallazgos al bot |
 | `MULTIMODAL_VOICE_REPLIES_ENABLED` | Reservado para respuestas de voz con ElevenLabs; mantener `0` hasta validar envío de audio |
+| `VOICE_RESPONSES_ENABLED` | Activa respuestas de voz compartidas para todos los bots; usa la conexión Meta aislada de cada tenant |
+| `VOICE_RESPONSE_PROVIDER` | Proveedor de TTS compartido; actualmente `openai` |
+| `OPENAI_TTS_MODEL` / `OPENAI_TTS_VOICE` | Modelo y voz base de TTS; se entrega como OGG/Opus reproducible en WhatsApp |
+| `VOICE_RESPONSE_MAX_CHARS` | Máximo de texto que se transforma a voz por respuesta (default: `2400`) |
 | `AI_STANDARD_MAX_TOKENS` | Máximo de salida para conversaciones normales (default: `1000`) |
 | `AI_STANDARD_HISTORY_MESSAGES` | Historial usado en conversaciones normales (default: `8`) |
 | `AI_ENGAGED_MAX_TOKENS` | Máximo de salida para consultas comerciales (default: `1400`) |
