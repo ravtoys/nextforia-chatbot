@@ -278,7 +278,7 @@ function bothBotAnswers(company, email) {
     assert(setupHtml.includes(".myshopify.com"));
     assert(setupHtml.includes("No escribas contraseñas, tokens ni claves privadas aquí"));
     assert(setupHtml.includes("commerce.integration_intent"));
-    assert(setupHtml.includes("Atención al cliente: clientes atendidos al mes"));
+    assert(setupHtml.includes("Clientes atendidos al mes"));
     assert(setupHtml.includes("operations.monthly_customer_volume"));
     assert(setupHtml.includes("customer_service_setup.business_offer_type"));
     assert(setupHtml.includes('name="selected_plan" value="nextfor-tempo"'), "customer setup must offer Nextfor Tempo");

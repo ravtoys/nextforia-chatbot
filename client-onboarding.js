@@ -412,8 +412,27 @@ function mergeCustomerSetupQuestionnaireHistory(snapshots, actor, now) {
 function questionAppliesToAnswers(question, answers) {
   const goal = answers && answers.setup_goal || "unknown";
   if (question.path === "setup_goal") return true;
+  if (question.path === "meta.whatsapp_number") {
+    if (goal === "customer_service") return question.section === "business";
+    if (goal === "appointments" || goal === "both") return question.section === "appointments_channels";
+  }
   if (question.path === "appointment_setup.business_category") return goal === "customer_service" || goal === "appointments" || goal === "both";
   if (question.path === "operations.monthly_customer_volume") return goal === "customer_service" || goal === "appointments" || goal === "both";
+  if (goal === "both" && [
+    "appointment_setup.business_name",
+    "appointment_setup.target_customer",
+    "appointment_setup.business_description",
+    "appointment_setup.business_differentiator",
+    "appointment_setup.assistant_tone",
+    "appointment_setup.bot_display_name",
+    "appointment_setup.forbidden_topics",
+    "appointment_setup.escalation_contact",
+    "appointment_setup.human_support_hours",
+    "appointment_setup.business_hours",
+    "appointment_setup.faqs",
+    "appointment_setup.channel_email",
+    "appointment_setup.data_consent"
+  ].includes(question.path)) return false;
   if (question.section === "business") return goal === "customer_service" || goal === "both";
   const appointmentQuestion = String(question.section || "").indexOf("appointments_") === 0 || String(question.path || "").indexOf("appointment_setup.") === 0;
   if (appointmentQuestion) return goal === "appointments" || goal === "both";
@@ -429,6 +448,28 @@ function requiredPathsForQuestionnaire(answers, questionnaire) {
 
 function cloneDefaults() {
   return JSON.parse(JSON.stringify(DEFAULT_ONBOARDING));
+}
+
+function appointmentToneFromCustomerService(value) {
+  return {
+    cercano_profesional: "cercano_profesional",
+    vendedor_dinamico: "alegre_casual",
+    calido_empatico: "calido_empatico",
+    formal_corporativo: "formal_corporativo",
+    premium: "formal_corporativo",
+    juvenil_casual: "alegre_casual",
+    personalizado: "cercano_profesional"
+  }[String(value || "")] || "";
+}
+
+function customerServiceToneFromAppointment(value) {
+  return {
+    cercano_profesional: "cercano_profesional",
+    formal_corporativo: "formal_corporativo",
+    calido_empatico: "calido_empatico",
+    directo_sencillo: "cercano_profesional",
+    alegre_casual: "juvenil_casual"
+  }[String(value || "")] || "";
 }
 
 function text(value, max) {
@@ -481,6 +522,19 @@ function normalizeOnboarding(input) {
         ? "pending_customer"
         : "not_requested";
   const setupGoal = choice(input.setup_goal, ["customer_service", "appointments", "both", "unknown"], "unknown");
+  const sharedBusinessName = text(business.brand_name || (setupGoal === "both" ? appointmentSetup.business_name : ""), 120);
+  const sharedOfferDescription = text(customerServiceSetup.business_offer_description || (setupGoal === "both" ? appointmentSetup.business_description : ""), 1800);
+  const sharedIdealCustomer = text(customerServiceSetup.ideal_customer || (setupGoal === "both" ? appointmentSetup.target_customer : ""), 1800);
+  const sharedValueProposition = text(customerServiceSetup.value_proposition || (setupGoal === "both" ? appointmentSetup.business_differentiator : ""), 1800);
+  const sharedBotDisplayName = text(customerServiceSetup.bot_display_name || (setupGoal === "both" ? appointmentSetup.bot_display_name : ""), 120);
+  const sharedCustomerTone = choice(customerServiceSetup.tone || (setupGoal === "both" ? customerServiceToneFromAppointment(appointmentSetup.assistant_tone) : ""), [
+    "cercano_profesional", "vendedor_dinamico", "calido_empatico",
+    "formal_corporativo", "premium", "juvenil_casual", "personalizado", ""
+  ], "");
+  const sharedBrandRestrictions = text(customerServiceSetup.brand_restrictions || (setupGoal === "both" ? appointmentSetup.forbidden_topics : ""), 3000);
+  const sharedSupportHours = text(operations.support_hours || (setupGoal === "both" ? appointmentSetup.human_support_hours || appointmentSetup.business_hours : ""), 1200);
+  const sharedFrequentQuestions = text(operations.frequent_questions || (setupGoal === "both" ? appointmentSetup.faqs : ""), 4000);
+  const sharedDataConsent = !!customerServiceSetup.data_consent || (setupGoal === "both" && !!appointmentSetup.data_consent);
   const appointmentCallsEnabled = choice(
     appointmentSetup.calls_enabled,
     ["yes", "no", "unknown"],
@@ -491,7 +545,7 @@ function normalizeOnboarding(input) {
   return {
     setup_goal: setupGoal,
     business: {
-      brand_name: text(business.brand_name, 120),
+      brand_name: sharedBusinessName,
       legal_name: text(business.legal_name, 180),
       tax_id: text(business.tax_id, 80),
       contact_name: text(business.contact_name, 120),
@@ -554,13 +608,13 @@ function normalizeOnboarding(input) {
       countries_served: text(operations.countries_served, 1200),
       foreign_number_location_check: operations.foreign_number_location_check !== false,
       business_hours: text(operations.business_hours, 1200),
-      services_products: text(operations.services_products, 5000),
-      support_hours: text(operations.support_hours, 1200),
+      services_products: text(operations.services_products || sharedOfferDescription, 5000),
+      support_hours: sharedSupportHours,
       payments: text(operations.payments, 2500),
       shipping: text(operations.shipping, 2500),
       warranties: text(operations.warranties, 2500),
       important_policies: text(operations.important_policies, 5000),
-      frequent_questions: text(operations.frequent_questions, 4000),
+      frequent_questions: sharedFrequentQuestions,
       handoff_cases: text(operations.handoff_cases, 3000),
       bot_instructions: text(operations.bot_instructions, 5000)
     },
@@ -579,45 +633,42 @@ function normalizeOnboarding(input) {
     },
     customer_service_setup: {
       business_offer_type: choice(customerServiceSetup.business_offer_type, ["products", "services", "both", ""], ""),
-      business_offer_description: text(customerServiceSetup.business_offer_description, 1800),
-      ideal_customer: text(customerServiceSetup.ideal_customer, 1800),
-      value_proposition: text(customerServiceSetup.value_proposition, 1800),
-      bot_display_name: text(customerServiceSetup.bot_display_name, 120),
-      tone: choice(customerServiceSetup.tone, [
-        "cercano_profesional", "vendedor_dinamico", "calido_empatico",
-        "formal_corporativo", "premium", "juvenil_casual", "personalizado", ""
-      ], ""),
+      business_offer_description: sharedOfferDescription,
+      ideal_customer: sharedIdealCustomer,
+      value_proposition: sharedValueProposition,
+      bot_display_name: sharedBotDisplayName,
+      tone: sharedCustomerTone,
       custom_tone_description: text(customerServiceSetup.custom_tone_description, 1200),
-      brand_restrictions: text(customerServiceSetup.brand_restrictions, 3000),
+      brand_restrictions: sharedBrandRestrictions,
       company_logo: text(customerServiceSetup.company_logo, 800000),
-      data_consent: !!customerServiceSetup.data_consent,
+      data_consent: sharedDataConsent,
       data_consent_version: text(customerServiceSetup.data_consent_version, 80),
       data_consent_accepted_at: text(customerServiceSetup.data_consent_accepted_at, 40),
       setup_status: choice(customerServiceSetup.setup_status, ["draft", "pending_review", "changes_requested", "approved", "active", "ready"], "draft")
     },
     appointment_setup: {
-      business_name: text(appointmentSetup.business_name, 120),
+      business_name: text(setupGoal === "both" ? sharedBusinessName : appointmentSetup.business_name, 120),
       business_category: text(appointmentSetup.business_category, 300),
       business_category_other: text(appointmentSetup.business_category_other, 160),
-      target_customer: text(appointmentSetup.target_customer, 1200),
-      business_description: text(appointmentSetup.business_description, 1800),
-      business_differentiator: text(appointmentSetup.business_differentiator, 1800),
-      assistant_tone: choice(appointmentSetup.assistant_tone, [
+      target_customer: text(setupGoal === "both" ? sharedIdealCustomer : appointmentSetup.target_customer, 1200),
+      business_description: text(setupGoal === "both" ? sharedOfferDescription : appointmentSetup.business_description, 1800),
+      business_differentiator: text(setupGoal === "both" ? sharedValueProposition : appointmentSetup.business_differentiator, 1800),
+      assistant_tone: choice(setupGoal === "both" ? appointmentToneFromCustomerService(sharedCustomerTone) : appointmentSetup.assistant_tone, [
         "cercano_profesional", "formal_corporativo", "calido_empatico",
         "directo_sencillo", "alegre_casual"
       ], ""),
-      bot_display_name: text(appointmentSetup.bot_display_name, 120),
+      bot_display_name: text(setupGoal === "both" ? sharedBotDisplayName : appointmentSetup.bot_display_name, 120),
       bot_image: text(appointmentSetup.bot_image, 800000),
       bot_logo: text(appointmentSetup.bot_logo, 800000),
       allowed_topics: text(appointmentSetup.allowed_topics, 2500),
-      forbidden_topics: text(appointmentSetup.forbidden_topics, 2500),
+      forbidden_topics: text(setupGoal === "both" ? sharedBrandRestrictions : appointmentSetup.forbidden_topics, 2500),
       escalation_triggers: text(appointmentSetup.escalation_triggers, 2500),
-      escalation_contact: text(appointmentSetup.escalation_contact, 1000),
-      human_support_hours: text(appointmentSetup.human_support_hours, 1200),
+      escalation_contact: text(setupGoal === "both" ? team.human_support_contact : appointmentSetup.escalation_contact, 1000),
+      human_support_hours: text(setupGoal === "both" ? operations.support_hours : appointmentSetup.human_support_hours, 1200),
       services: text(appointmentSetup.services, 7000),
-      business_hours: text(appointmentSetup.business_hours, 2000),
+      business_hours: text(setupGoal === "both" ? sharedSupportHours : appointmentSetup.business_hours, 2000),
       payment_methods: text(appointmentSetup.payment_methods, 2000),
-      faqs: text(appointmentSetup.faqs, 5000),
+      faqs: text(setupGoal === "both" ? sharedFrequentQuestions : appointmentSetup.faqs, 5000),
       knowledge_documents: text(appointmentSetup.knowledge_documents, 5000),
       staff_mode: choice(appointmentSetup.staff_mode, ["one", "multiple", "depends", ""], ""),
       appointment_staff: text(appointmentSetup.appointment_staff, 5000),
@@ -660,11 +711,11 @@ function normalizeOnboarding(input) {
       low_rating_action: text(appointmentSetup.low_rating_action, 2000),
       operational_channels: text(appointmentSetup.operational_channels, 2500),
       instagram_username: text(appointmentSetup.instagram_username, 120),
-      channel_email: text(appointmentSetup.channel_email, 180).toLowerCase(),
+      channel_email: text(setupGoal === "both" ? business.contact_email : appointmentSetup.channel_email, 180).toLowerCase(),
       calls_enabled: appointmentCallsEnabled,
       other_channels: text(appointmentSetup.other_channels, 2500),
       social_accounts: text(appointmentSetup.social_accounts, 2500),
-      data_consent: !!appointmentSetup.data_consent,
+      data_consent: setupGoal === "both" ? sharedDataConsent : !!appointmentSetup.data_consent,
       data_consent_version: text(appointmentSetup.data_consent_version, 80),
       data_consent_accepted_at: text(appointmentSetup.data_consent_accepted_at, 40),
       setup_status: choice(appointmentSetup.setup_status, ["draft", "pending_review", "changes_requested", "approved", "active", "ready"], "draft")
