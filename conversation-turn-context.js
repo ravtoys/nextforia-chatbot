@@ -3,13 +3,14 @@
 const { AsyncLocalStorage } = require("async_hooks");
 
 const storage = new AsyncLocalStorage();
-const ARRAY_FIELDS = new Set(["tools", "zeroResultQueries"]);
+const ARRAY_FIELDS = new Set(["tools", "zeroResultQueries", "aiUsage"]);
 const FIELDS = new Set([
   "tools",
   "zeroResultQueries",
   "handoff",
   "rating",
-  "zeroSearchActive"
+  "zeroSearchActive",
+  "aiUsage"
 ]);
 
 function copyArray(value) {
@@ -23,7 +24,8 @@ function createState(initial) {
     zeroResultQueries: copyArray(initial.zeroResultQueries),
     handoff: initial.handoff === true,
     rating: Object.prototype.hasOwnProperty.call(initial, "rating") ? initial.rating : null,
-    zeroSearchActive: initial.zeroSearchActive === true
+    zeroSearchActive: initial.zeroSearchActive === true,
+    aiUsage: copyArray(initial.aiUsage)
   };
 }
 
@@ -80,7 +82,8 @@ function snapshot() {
     zeroResultQueries: state.zeroResultQueries.slice(),
     handoff: state.handoff,
     rating: state.rating,
-    zeroSearchActive: state.zeroSearchActive
+    zeroSearchActive: state.zeroSearchActive,
+    aiUsage: state.aiUsage.slice()
   };
 }
 

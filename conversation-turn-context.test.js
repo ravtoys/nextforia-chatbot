@@ -26,6 +26,7 @@ function deferred() {
     turnContext.set("handoff", true);
     turnContext.set("rating", 5);
     turnContext.set("zeroSearchActive", true);
+    turnContext.push("aiUsage", { provider: "anthropic", input_tokens: 10 });
     aReady.resolve();
     await bothReady;
     await new Promise(function (resolve) { setImmediate(resolve); });
@@ -50,14 +51,16 @@ function deferred() {
     zeroResultQueries: ["patines"],
     handoff: true,
     rating: 5,
-    zeroSearchActive: true
+    zeroSearchActive: true,
+    aiUsage: [{ provider: "anthropic", input_tokens: 10 }]
   });
   assert.deepStrictEqual(results[1], {
     tools: ["lookup_order_status"],
     zeroResultQueries: ["pedido-42"],
     handoff: false,
     rating: 2,
-    zeroSearchActive: false
+    zeroSearchActive: false,
+    aiUsage: []
   });
 
   await turnContext.run({ tools: ["outer"] }, async function () {

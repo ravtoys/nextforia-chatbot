@@ -68,6 +68,10 @@ Plataforma multi-tenant de NextforIA para atención al cliente y agendamiento po
 | `META_GRAPH_VERSION` | Versión de Graph API para WhatsApp, Instagram y Messenger (default: `v26.0`) |
 | `ANTHROPIC_API_KEY` | API key de Anthropic (Claude) |
 | `OPENAI_API_KEY` | API key usada por el agente multimodal cuando se activan voz o imagen |
+| `ANTHROPIC_ADMIN_API_KEY` | Clave administrativa separada para consultar el costo oficial de la organización Anthropic; nunca llega al navegador |
+| `OPENAI_ADMIN_API_KEY` | Clave administrativa separada para consultar el costo oficial de la organización OpenAI; nunca llega al navegador |
+| `AI_COSTS_ENABLED` | Activa la telemetría protegida de uso y costo por conversación, bot y cliente (default: `1`) |
+| `AI_COSTS_PROVIDER_CACHE_MS` | Tiempo de caché de los reportes oficiales para no consultar facturación en cada apertura (default: `600000`) |
 | `OPENAI_TRANSCRIPTION_MODEL` | Modelo de transcripción multimodal (default: `gpt-4o-mini-transcribe`) |
 | `OPENAI_VISION_MODEL` | Modelo de análisis de imágenes (default: `gpt-4.1-mini`) |
 | `MULTIMODAL_AGENT_ENABLED` | Gate maestro del agente de audio/imagen |
@@ -140,6 +144,7 @@ Plataforma multi-tenant de NextforIA para atención al cliente y agendamiento po
 | `GET/POST /admin/setup/:tenantId` | Validación y consumo atómico de la invitación; el cliente crea su contraseña sin username |
 | `GET /admin/access-model` | Modelo futuro de acceso: `super_admin` NexforIA y roles Admin del cliente |
 | `GET /admin/super-admin` | Panel de plataforma NexforIA; acceso exclusivo para `super_admin` |
+| `GET /admin/ai-costs?days=30` | Super admin: consumo estimado por conversación/bot/cliente y totales oficiales Anthropic/OpenAI cuando existen claves administrativas |
 | `GET /admin/super-admin/login` | Entrada interna y separada para usuarios Super Admin de NexforIA |
 | `GET /admin/super-admin/signature` | Consola Nextfor Signature: enlaces únicos, respuestas en vivo, resúmenes y editor del formulario |
 | `GET /admin/signature/client/:token` | Diagnóstico privado y reutilizable de un prospecto; autoguarda y permite continuar después |

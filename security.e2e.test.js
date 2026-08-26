@@ -139,6 +139,16 @@ function waitForServer(child, port) {
     response = await fetch(base + "/admin/platform-goals", { headers: { cookie: adminCookie } });
     assert.strictEqual(response.status, 401, "client admin must not read platform goals");
 
+    response = await fetch(base + "/admin/ai-costs?days=7", { headers: { cookie: adminCookie } });
+    assert.strictEqual(response.status, 401, "client admin must not read platform AI costs");
+
+    response = await fetch(base + "/admin/ai-costs?days=7", { headers: { cookie: superAdminCookie } });
+    assert.strictEqual(response.status, 200, "super admin should read platform AI costs");
+    const aiCostsBody = await response.json();
+    assert.strictEqual(aiCostsBody.ok, true);
+    assert.strictEqual(aiCostsBody.period_days, 7);
+    assert(!JSON.stringify(aiCostsBody).includes("e2e-not-used"), "AI cost response must never expose provider keys");
+
     response = await fetch(base + "/admin/support/tenants/rav-toys-adac1e/release-handoffs", {
       method: "POST",
       headers: { "content-type": "application/json", origin: base, cookie: adminCookie },

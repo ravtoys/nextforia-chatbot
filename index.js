@@ -203,6 +203,15 @@ const {
 const conversationTurnContext = require("./conversation-turn-context");
 const { conversationHistoryFromTurns } = require("./conversation-history");
 const {
+  aggregateAiUsageEvents,
+  createAiUsageEvent,
+  normalizeProviderError,
+  parseAiUsageTurn,
+  serializeAiUsageEvent,
+  sumAnthropicCostReport,
+  sumOpenAiCostReport
+} = require("./ai-usage");
+const {
   RetargetingEngine,
   REAL_SENDS_ENABLED: RETARGETING_REAL_SENDS_ENABLED,
   AUTOMATIC_MODE_ENABLED: RETARGETING_AUTOMATIC_MODE_ENABLED,
@@ -432,7 +441,7 @@ app.get("/admin/terms", (req, res) => res.type("html").send(renderTermsOfService
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────────
 const PRODUCT_NAME = "NextforIA Chatbot";
-const BOT_VERSION = "v461-tenant-order-whatsapp-notifications";  // bump cada release; usado por endpoints /admin/*
+const BOT_VERSION = "v465-super-admin-ai-costs";  // bump cada release; usado por endpoints /admin/*
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "";
 const DASHBOARD_KEY = process.env.DASHBOARD_KEY || "";
 const DASHBOARD_SESSION_COOKIE = "nextforia_dashboard_session";
@@ -729,6 +738,10 @@ const ALLOW_UNSIGNED_WEBHOOKS = process.env.ALLOW_UNSIGNED_WEBHOOKS === "1" && p
 const MESSENGER_GRAPH_BASE_URL = configuredHttpsOrigin(process.env.MESSENGER_GRAPH_BASE_URL, "https://graph.facebook.com", ["graph.facebook.com"]);
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const OPENAI_API_KEY = String(process.env.OPENAI_API_KEY || "").trim();
+const ANTHROPIC_ADMIN_API_KEY = String(process.env.ANTHROPIC_ADMIN_API_KEY || "").trim();
+const OPENAI_ADMIN_API_KEY = String(process.env.OPENAI_ADMIN_API_KEY || "").trim();
+const AI_COSTS_ENABLED = process.env.AI_COSTS_ENABLED !== "0";
+const AI_COSTS_PROVIDER_CACHE_MS = boundedEnvInt("AI_COSTS_PROVIDER_CACHE_MS", 10 * 60 * 1000, 60 * 1000, 60 * 60 * 1000);
 const MULTIMODAL_CONFIG = multimodalConfigFromEnv(process.env);
 const OPENAI_TRANSCRIPTION_MODEL = String(process.env.OPENAI_TRANSCRIPTION_MODEL || "gpt-4o-mini-transcribe").trim();
 const OPENAI_VISION_MODEL = String(process.env.OPENAI_VISION_MODEL || "gpt-4.1-mini").trim();
@@ -789,6 +802,7 @@ const SHOPIFY_SESSION_TENANT_ID = "platform-shopify";
 const LEGACY_CLIENT_VISIBILITY_TOOL = "super_admin_legacy_client_visibility_v1";
 const LEGACY_CLIENT_VISIBILITY_RECORD_ID = "super-admin:legacy-client-visibility";
 const SUPER_ADMIN_SETUP_REVIEW_TOOL = "super_admin_setup_review_v1";
+const AI_USAGE_TOOL = "ai_usage_v1";
 const RETARGETING_EVENT_TOOL = "retargeting_event_v1";
 const SUPABASE_STATE_CACHE_TTL_MS = boundedEnvInt("SUPABASE_STATE_CACHE_TTL_MS", 5 * 60 * 1000, 30000, 30 * 60 * 1000);
 const CUSTOMER_CONFIGURATION_CACHE_TTL_MS = boundedEnvInt("CUSTOMER_CONFIGURATION_CACHE_TTL_MS", 5 * 60 * 1000, 30000, 30 * 60 * 1000);
@@ -806,7 +820,8 @@ const CUSTOMER_PANEL_INTERNAL_STATE_TOOLS = Object.freeze([
   SHOPIFY_SESSION_STATE_TOOL,
   SIGNATURE_TOOL,
   APPOINTMENT_CALENDAR_CONNECTION_STATE_TOOL,
-  CUSTOMER_CONVERSATION_CLEAR_TOOL
+  CUSTOMER_CONVERSATION_CLEAR_TOOL,
+  AI_USAGE_TOOL
 ]);
 const CUSTOMER_PANEL_TURN_COLUMNS = "id,ts,tenant_id,phone_number_id,channel,user_id,user_message,bot_reply,tools,zero_result_queries,handoff,rating,num_tools,status,eval";
 const RETARGETING_EVENT_RECORD_PREFIX = "retargeting-events:";
@@ -1136,6 +1151,7 @@ const setupReviewDeletedTenantIdsMemory = new Set();
 let customerSetupQuestionnaireCache = { loaded_at: 0, questionnaire: null };
 const latestToolStateCache = new Map();
 const customerPanelActivityCache = new Map();
+const aiProviderCostReportCache = new Map();
 let legacyClientVisibilityCache = { loaded_at: 0, hidden_ids: [] };
 const retargetingMemoryEvents = new Map();
 const retargetingEventCache = new Map();
@@ -3634,6 +3650,31 @@ async function supabaseFetchToolAllStrict(toolName) {
   }
   throw new Error("supabase_strict_tool_scan_truncated");
 }
+async function supabaseFetchToolSinceStrict(toolName, since, maximumRows) {
+  if (!SUPABASE_ENABLED) throw new Error("supabase_not_configured");
+  const pageSize = 1000;
+  const rowLimit = Math.max(1, Math.min(Number(maximumRows) || 10000, 50000));
+  const rows = [];
+  const url = SUPABASE_URL + "/rest/v1/" + SUPABASE_TABLE;
+  for (let offset = 0; offset < rowLimit; offset += pageSize) {
+    const response = await axios.get(url, {
+      params: {
+        select: "*",
+        tools: "cs." + JSON.stringify([toolName]),
+        ts: "gte." + since,
+        order: "ts.desc,id.desc",
+        limit: Math.min(pageSize, rowLimit - offset),
+        offset
+      },
+      headers: SB_HEADERS,
+      timeout: 12000
+    });
+    if (!Array.isArray(response.data)) throw new Error("supabase_ai_usage_invalid_response");
+    rows.push(...response.data);
+    if (response.data.length < pageSize) return { rows, complete: true };
+  }
+  return { rows, complete: false };
+}
 async function supabaseFetchPending(limit) {
   if (!SUPABASE_ENABLED) return null;
   try {
@@ -4700,6 +4741,7 @@ function recordTurn(userId, userMessage, botReply, status, meta) {
       : supabaseInsert(rec);
     return Promise.resolve(persistence).then(async function (result) {
       await recordBotOpsTurn(rec);
+      if (turn.aiUsage && turn.aiUsage.length) await rememberAiUsageEvents(turn.aiUsage);
       if (rec.handoff && rec.status !== "outbound_pending" && rec.tools.includes("request_human_handoff")) {
         await queueCustomerHandoffNotification(tenantId, cleanUserId, "solicitud_cliente", meta);
       }
@@ -4886,6 +4928,212 @@ function trackAnthropicUsage(usage) {
   botStats.anthropic.outputTokens += (usage.output_tokens || 0);
   botStats.anthropic.cacheCreationTokens += (usage.cache_creation_input_tokens || 0);
   botStats.anthropic.cacheReadTokens += (usage.cache_read_input_tokens || 0);
+}
+
+function rememberAiUsageEvents(events) {
+  const validEvents = (Array.isArray(events) ? events : []).filter(Boolean);
+  if (!AI_COSTS_ENABLED || !validEvents.length) return Promise.resolve(false);
+  const first = validEvents[0];
+  const rec = {
+    ts: first.at || new Date().toISOString(),
+    tenantId: cleanTenantId(first.tenant_id) || "platform",
+    phoneNumberId: null,
+    channel: ["whatsapp", "instagram", "messenger"].includes(cleanChannel(first.channel)) ? cleanChannel(first.channel) : "whatsapp",
+    userId: "ai-usage:" + String(first.conversation_ref || "operacion-interna").slice(0, 80),
+    userMessage: "",
+    botReply: serializeAiUsageEvent(validEvents),
+    tools: [AI_USAGE_TOOL],
+    zeroResultQueries: [],
+    handoff: false,
+    rating: null,
+    numTools: 1,
+    status: validEvents.some(function (event) { return event.status === "error"; }) ? "error" : "ok",
+    eval: { skip: true, reason: AI_USAGE_TOOL }
+  };
+  rememberConversationTurn(rec);
+  return Promise.resolve(supabaseInsert(rec)).catch(function (error) {
+    log("warn", "ai_usage_persistence_failed", {
+      tenant_id: rec.tenantId,
+      error: cleanRuntimeText(error && error.message, 160)
+    });
+    return false;
+  });
+}
+
+function captureAiUsage(input) {
+  if (!AI_COSTS_ENABLED) return null;
+  const event = createAiUsageEvent(input);
+  if (conversationTurnContext.isActive()) conversationTurnContext.push("aiUsage", event);
+  else rememberAiUsageEvents([event]);
+  return event;
+}
+
+function aiProviderReportCacheKey(provider, days) {
+  return provider + ":" + days;
+}
+
+async function fetchAnthropicOfficialCosts(startingAt, days) {
+  if (!ANTHROPIC_ADMIN_API_KEY) return { status: "not_configured", cost_usd: null };
+  const cacheKey = aiProviderReportCacheKey("anthropic", days);
+  const cached = aiProviderCostReportCache.get(cacheKey);
+  if (cached && Date.now() - cached.loaded_at < AI_COSTS_PROVIDER_CACHE_MS) return cached.value;
+  try {
+    const collected = { data: [] };
+    let page = null;
+    for (let index = 0; index < 10; index++) {
+      const response = await axios.get("https://api.anthropic.com/v1/organizations/cost_report", {
+        params: {
+          starting_at: startingAt,
+          bucket_width: "1d",
+          limit: Math.min(days, 31),
+          ...(page ? { page } : {})
+        },
+        headers: {
+          "x-api-key": ANTHROPIC_ADMIN_API_KEY,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json"
+        },
+        timeout: 12000
+      });
+      collected.data.push(...(Array.isArray(response.data && response.data.data) ? response.data.data : []));
+      if (!response.data || !response.data.has_more || !response.data.next_page) break;
+      page = response.data.next_page;
+    }
+    const value = { status: "connected", cost_usd: sumAnthropicCostReport(collected), checked_at: new Date().toISOString() };
+    aiProviderCostReportCache.set(cacheKey, { loaded_at: Date.now(), value });
+    return value;
+  } catch (error) {
+    const normalized = normalizeProviderError(error);
+    const value = { status: "error", cost_usd: null, error_code: normalized.code, checked_at: new Date().toISOString() };
+    aiProviderCostReportCache.set(cacheKey, { loaded_at: Date.now(), value });
+    return value;
+  }
+}
+
+async function fetchOpenAiOfficialCosts(startingAt, days) {
+  if (!OPENAI_ADMIN_API_KEY) return { status: "not_configured", cost_usd: null };
+  const cacheKey = aiProviderReportCacheKey("openai", days);
+  const cached = aiProviderCostReportCache.get(cacheKey);
+  if (cached && Date.now() - cached.loaded_at < AI_COSTS_PROVIDER_CACHE_MS) return cached.value;
+  try {
+    const collected = { data: [] };
+    let page = null;
+    for (let index = 0; index < 10; index++) {
+      const response = await axios.get("https://api.openai.com/v1/organization/costs", {
+        params: {
+          start_time: Math.floor(Date.parse(startingAt) / 1000),
+          bucket_width: "1d",
+          limit: Math.min(days, 180),
+          ...(page ? { page } : {})
+        },
+        headers: { Authorization: "Bearer " + OPENAI_ADMIN_API_KEY, "Content-Type": "application/json" },
+        timeout: 12000
+      });
+      collected.data.push(...(Array.isArray(response.data && response.data.data) ? response.data.data : []));
+      if (!response.data || !response.data.has_more || !response.data.next_page) break;
+      page = response.data.next_page;
+    }
+    const value = { status: "connected", cost_usd: sumOpenAiCostReport(collected), checked_at: new Date().toISOString() };
+    aiProviderCostReportCache.set(cacheKey, { loaded_at: Date.now(), value });
+    return value;
+  } catch (error) {
+    const normalized = normalizeProviderError(error);
+    const value = { status: "error", cost_usd: null, error_code: normalized.code, checked_at: new Date().toISOString() };
+    aiProviderCostReportCache.set(cacheKey, { loaded_at: Date.now(), value });
+    return value;
+  }
+}
+
+function aiProviderOperationalStatus(runtimeKeyPresent, totals, official) {
+  totals = totals || {};
+  const lastSuccess = Date.parse(totals.last_success_at || "") || 0;
+  const lastError = Date.parse(totals.last_error_at || "") || 0;
+  if (totals.last_error_code === "no_credits" && lastError >= lastSuccess) return "no_credits";
+  if (lastSuccess > 0) return "active";
+  if (!runtimeKeyPresent) return "missing_key";
+  if (official && official.status === "error" && official.error_code === "invalid_credentials") return "reporting_credentials_invalid";
+  return "not_observed";
+}
+
+async function aiUsageRowsSince(since) {
+  if (!SUPABASE_ENABLED) {
+    return {
+      rows: conversationLogs.filter(function (turn) {
+        return Array.isArray(turn.tools) && turn.tools.includes(AI_USAGE_TOOL) && Date.parse(turn.ts || "") >= Date.parse(since);
+      }),
+      complete: true,
+      source: "memory"
+    };
+  }
+  const result = await supabaseFetchToolSinceStrict(AI_USAGE_TOOL, since, 50000);
+  return { rows: result.rows.map(normalizeTurnRow), complete: result.complete, source: "supabase" };
+}
+
+async function buildAiCostsSnapshot(days) {
+  const periodDays = Math.max(1, Math.min(Number(days) || 30, 90));
+  const since = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000).toISOString();
+  const stored = await aiUsageRowsSince(since);
+  const events = [];
+  stored.rows.forEach(function (turn) {
+    const parsed = parseAiUsageTurn(turn);
+    if (Array.isArray(parsed)) events.push(...parsed);
+  });
+  const usage = aggregateAiUsageEvents(events);
+  const officialReports = await Promise.all([
+    fetchAnthropicOfficialCosts(since, periodDays),
+    fetchOpenAiOfficialCosts(since, periodDays)
+  ]);
+  const providersByName = {};
+  usage.providers.forEach(function (row) { providersByName[row.provider] = row; });
+  const providers = [
+    {
+      provider: "anthropic",
+      runtime_key_configured: !!ANTHROPIC_API_KEY,
+      admin_reporting_configured: !!ANTHROPIC_ADMIN_API_KEY,
+      recharge_url: "https://platform.claude.com/settings/billing",
+      usage_url: "https://platform.claude.com/usage",
+      official: officialReports[0]
+    },
+    {
+      provider: "openai",
+      runtime_key_configured: !!OPENAI_API_KEY,
+      admin_reporting_configured: !!OPENAI_ADMIN_API_KEY,
+      recharge_url: "https://platform.openai.com/settings/organization/billing/overview",
+      usage_url: "https://platform.openai.com/usage",
+      official: officialReports[1]
+    }
+  ].map(function (provider) {
+    const local = providersByName[provider.provider] || {};
+    return Object.assign(provider, {
+      local,
+      operational_status: aiProviderOperationalStatus(provider.runtime_key_configured, local, provider.official)
+    });
+  });
+  const tenantIds = Array.from(new Set(usage.bots.concat(usage.conversations.slice(0, 200)).map(function (row) {
+    return cleanTenantId(row.tenant_id);
+  }).filter(Boolean)));
+  const tenantLabels = {};
+  await Promise.all(tenantIds.slice(0, 100).map(async function (tenantId) {
+    try {
+      const tenant = await setupReviewTenant(tenantId);
+      tenantLabels[tenantId] = tenant && (tenant.company_name || tenant.name) || tenantId;
+    } catch (_) {
+      tenantLabels[tenantId] = tenantId;
+    }
+  }));
+  return {
+    ok: true,
+    generated_at: new Date().toISOString(),
+    period_days: periodDays,
+    since,
+    source: stored.source,
+    complete: stored.complete,
+    note: "El costo por conversación es una estimación calculada con los tokens devueltos por cada llamada. El costo oficial total viene de cada proveedor cuando su llave administrativa está configurada.",
+    balance_note: "Los proveedores administran créditos monetarios, no una bolsa fija de tokens. El saldo recargable se consulta y compra únicamente en sus portales oficiales.",
+    usage,
+    providers,
+    tenant_labels: tenantLabels
+  };
 }
 
 function estimateCostUSD() {
@@ -6657,16 +6905,42 @@ async function downloadWhatsAppMediaForMultimodal(media, context) {
   };
 }
 
-async function transcribeMultimodalAudio(downloaded, media) {
+async function transcribeMultimodalAudio(downloaded, media, context) {
   if (!OPENAI_API_KEY) throw new Error("openai_api_key_missing");
   const form = new FormData();
   form.append("model", OPENAI_TRANSCRIPTION_MODEL);
   form.append("file", new Blob([downloaded.buffer], { type: downloaded.mime_type || media.mime_type || "audio/ogg" }), mediaFilename(media));
   form.append("response_format", "json");
-  const response = await axios.post("https://api.openai.com/v1/audio/transcriptions", form, {
-    headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
-    timeout: 45000,
-    maxBodyLength: MULTIMODAL_CONFIG.max_audio_bytes + 1024 * 1024
+  let response;
+  try {
+    response = await axios.post("https://api.openai.com/v1/audio/transcriptions", form, {
+      headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
+      timeout: 45000,
+      maxBodyLength: MULTIMODAL_CONFIG.max_audio_bytes + 1024 * 1024
+    });
+  } catch (error) {
+    captureAiUsage({
+      provider: "openai",
+      model: OPENAI_TRANSCRIPTION_MODEL,
+      tenant_id: context && context.tenant_id,
+      user_id: context && context.user_id,
+      channel: conversationChannel(context && context.user_id),
+      bot_id: "multimodal",
+      feature: "audio_transcription",
+      status: "error",
+      error
+    });
+    throw error;
+  }
+  captureAiUsage({
+    provider: "openai",
+    model: OPENAI_TRANSCRIPTION_MODEL,
+    tenant_id: context && context.tenant_id,
+    user_id: context && context.user_id,
+    channel: conversationChannel(context && context.user_id),
+    bot_id: "multimodal",
+    feature: "audio_transcription",
+    usage: response.data && response.data.usage
   });
   const text = extractOpenAIText(response.data);
   if (!text) throw new Error("transcription_empty");
@@ -6704,23 +6978,50 @@ async function analyzeMultimodalImage(downloaded, media, context) {
   const mime = downloaded.mime_type || media.mime_type || "image/jpeg";
   const dataUrl = "data:" + mime + ";base64," + downloaded.buffer.toString("base64");
   const botMode = await multimodalBotModeForTenant(context && context.tenant_id);
-  const response = await axios.post("https://api.openai.com/v1/responses", {
+  let response;
+  try {
+    response = await axios.post("https://api.openai.com/v1/responses", {
+      model: OPENAI_VISION_MODEL,
+      max_output_tokens: 450,
+      input: [{
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: imageAnalysisPrompt(botMode)
+          },
+          { type: "input_image", image_url: dataUrl }
+        ]
+      }]
+    }, {
+      headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
+      timeout: 45000,
+      maxBodyLength: MULTIMODAL_CONFIG.max_image_bytes + 1024 * 1024
+    });
+  } catch (error) {
+    captureAiUsage({
+      provider: "openai",
+      model: OPENAI_VISION_MODEL,
+      tenant_id: context && context.tenant_id,
+      user_id: context && context.user_id,
+      channel: conversationChannel(context && context.user_id),
+      bot_id: botMode === "appointments" ? "appointment" : "customer_service",
+      feature: "image_analysis",
+      status: "error",
+      error
+    });
+    throw error;
+  }
+  captureAiUsage({
+    provider: "openai",
     model: OPENAI_VISION_MODEL,
-    max_output_tokens: 450,
-    input: [{
-      role: "user",
-      content: [
-        {
-          type: "input_text",
-          text: imageAnalysisPrompt(botMode)
-        },
-        { type: "input_image", image_url: dataUrl }
-      ]
-    }]
-  }, {
-    headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
-    timeout: 45000,
-    maxBodyLength: MULTIMODAL_CONFIG.max_image_bytes + 1024 * 1024
+    tenant_id: context && context.tenant_id,
+    user_id: context && context.user_id,
+    channel: conversationChannel(context && context.user_id),
+    bot_id: botMode === "appointments" ? "appointment" : "customer_service",
+    feature: "image_analysis",
+    usage: response.data && response.data.usage,
+    context_messages: 1
   });
   const text = extractOpenAIText(response.data);
   if (!text) throw new Error("vision_empty");
@@ -8355,28 +8656,60 @@ async function handleConversationInTurnContext(userId, userMessage, conversation
         ],
         tools: conversationTools
       });
-      const response = await axios.post(
-        "https://api.anthropic.com/v1/messages",
-        {
-          model: "claude-sonnet-4-5-20250929",
-          max_tokens: adaptiveBudget.maxTokens,
-          system: cachedPrompt.system,
-          tools: cachedPrompt.tools,
-          messages: workingHistory.slice(-adaptiveBudget.historyMessages),
-        },
-        {
-          headers: {
-            "x-api-key": ANTHROPIC_API_KEY,
-            "anthropic-version": "2023-06-01",
-            "Content-Type": "application/json",
+      let response;
+      try {
+        response = await axios.post(
+          "https://api.anthropic.com/v1/messages",
+          {
+            model: "claude-sonnet-4-5-20250929",
+            max_tokens: adaptiveBudget.maxTokens,
+            system: cachedPrompt.system,
+            tools: cachedPrompt.tools,
+            messages: workingHistory.slice(-adaptiveBudget.historyMessages),
           },
-          timeout: 40000,
-        }
-      );
+          {
+            headers: {
+              "x-api-key": ANTHROPIC_API_KEY,
+              "anthropic-version": "2023-06-01",
+              "Content-Type": "application/json",
+            },
+            timeout: 40000,
+          }
+        );
+      } catch (error) {
+        captureAiUsage({
+          provider: "anthropic",
+          model: "claude-sonnet-4-5-20250929",
+          tenant_id: tenantId,
+          user_id: userId,
+          channel: conversationRuntime.channel,
+          bot_id: routeUsesAppointmentBot ? "appointment" : "customer_service",
+          feature: "customer_reply",
+          status: "error",
+          error,
+          context_messages: workingHistory.slice(-adaptiveBudget.historyMessages).length,
+          tools_available: cachedPrompt.tools.length,
+          iteration: iteration + 1
+        });
+        throw error;
+      }
 
       const stopReason = response.data.stop_reason;
       runtimeIncidentMonitor.success("anthropic", tenantId);
       trackAnthropicUsage(response.data?.usage);
+      captureAiUsage({
+        provider: "anthropic",
+        model: "claude-sonnet-4-5-20250929",
+        tenant_id: tenantId,
+        user_id: userId,
+        channel: conversationRuntime.channel,
+        bot_id: routeUsesAppointmentBot ? "appointment" : "customer_service",
+        feature: "customer_reply",
+        usage: response.data && response.data.usage,
+        context_messages: workingHistory.slice(-adaptiveBudget.historyMessages).length,
+        tools_available: cachedPrompt.tools.length,
+        iteration: iteration + 1
+      });
       botStats.anthropic.budgetTiers[adaptiveBudget.tier] = (botStats.anthropic.budgetTiers[adaptiveBudget.tier] || 0) + 1;
       const content = response.data.content;
 
@@ -17253,24 +17586,52 @@ app.post("/admin/panel/bot-personality/test", async (req, res) => {
       "Eres una vista previa segura del bot de atención de esta empresa. No envías mensajes reales. No inventes datos ausentes.",
       ...liveConfiguration.prompts
     ].filter(Boolean).join("\n\n");
-    const response = await axios.post(
-      "https://api.anthropic.com/v1/messages",
-      {
-        model: "claude-sonnet-4-5-20250929",
-        max_tokens: maxTokensForPersonality(liveConfiguration.personality),
-        system,
-        messages: [{ role: "user", content: message }]
-      },
-      {
-        headers: {
-          "x-api-key": ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",
-          "Content-Type": "application/json"
+    let response;
+    try {
+      response = await axios.post(
+        "https://api.anthropic.com/v1/messages",
+        {
+          model: "claude-sonnet-4-5-20250929",
+          max_tokens: maxTokensForPersonality(liveConfiguration.personality),
+          system,
+          messages: [{ role: "user", content: message }]
         },
-        timeout: 40000
-      }
-    );
+        {
+          headers: {
+            "x-api-key": ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json"
+          },
+          timeout: 40000
+        }
+      );
+    } catch (error) {
+      captureAiUsage({
+        provider: "anthropic",
+        model: "claude-sonnet-4-5-20250929",
+        tenant_id: tenantId,
+        user_id: "customer-panel-preview",
+        channel: "internal",
+        bot_id: "customer_service",
+        feature: "bot_preview",
+        status: "error",
+        error,
+        context_messages: 1
+      });
+      throw error;
+    }
     trackAnthropicUsage(response.data && response.data.usage);
+    captureAiUsage({
+      provider: "anthropic",
+      model: "claude-sonnet-4-5-20250929",
+      tenant_id: tenantId,
+      user_id: "customer-panel-preview",
+      channel: "internal",
+      bot_id: "customer_service",
+      feature: "bot_preview",
+      usage: response.data && response.data.usage,
+      context_messages: 1
+    });
     const reply = (response.data && Array.isArray(response.data.content) ? response.data.content : [])
       .filter(function (block) { return block && block.type === "text"; })
       .map(function (block) { return String(block.text || ""); })
@@ -20466,6 +20827,29 @@ app.get("/admin/super-admin", async (req, res) => {
   });
 });
 
+app.get("/admin/ai-costs", async (req, res) => {
+  const auth = dashboardAuth(req);
+  if (!auth.ok || auth.role !== "super_admin") {
+    res.status(401).json({ ok: false, error: "unauthorized" });
+    return;
+  }
+  if (!AI_COSTS_ENABLED) {
+    res.status(503).json({ ok: false, error: "ai_costs_disabled" });
+    return;
+  }
+  const days = Math.max(1, Math.min(parseInt(req.query.days, 10) || 30, 90));
+  if (req.query.fresh === "1") {
+    aiProviderCostReportCache.delete(aiProviderReportCacheKey("anthropic", days));
+    aiProviderCostReportCache.delete(aiProviderReportCacheKey("openai", days));
+  }
+  try {
+    res.json(await buildAiCostsSnapshot(days));
+  } catch (error) {
+    log("error", "ai_costs_snapshot_failed", { error: cleanRuntimeText(error && error.message, 180) });
+    res.status(503).json({ ok: false, error: "ai_costs_unavailable" });
+  }
+});
+
 app.post("/admin/legacy-clients/:tenantId/hide", async (req, res) => {
   const auth = dashboardAuth(req);
   if (!auth.ok || auth.role !== "super_admin") {
@@ -21937,20 +22321,48 @@ async function evaluateTurn(turn) {
     '{"resuelto":"si|no|parcial","tono":1,"intencion_compra":false,"aciertos":"máx 12 palabras","errores":"máx 12 palabras","sugerencia":"máx 15 palabras"}'
   ].join("\n");
 
-  const resp = await axios.post("https://api.anthropic.com/v1/messages", {
-    model: "claude-sonnet-4-5-20250929",
-    max_tokens: 300,
-    system: sys,
-    messages: [{ role: "user", content: userMsg }]
-  }, {
-    headers: {
-      "x-api-key": ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json"
-    },
-    timeout: 20000
-  });
+  let resp;
+  try {
+    resp = await axios.post("https://api.anthropic.com/v1/messages", {
+      model: "claude-sonnet-4-5-20250929",
+      max_tokens: 300,
+      system: sys,
+      messages: [{ role: "user", content: userMsg }]
+    }, {
+      headers: {
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json"
+      },
+      timeout: 20000
+    });
+  } catch (error) {
+    captureAiUsage({
+      provider: "anthropic",
+      model: "claude-sonnet-4-5-20250929",
+      tenant_id: turn.tenantId || turn.tenant_id,
+      user_id: turn.userId || turn.user_id || "quality-evaluation",
+      channel: turn.channel || "internal",
+      bot_id: "platform",
+      feature: "quality_evaluation",
+      status: "error",
+      error,
+      context_messages: 1
+    });
+    throw error;
+  }
   trackAnthropicUsage(resp.data && resp.data.usage);
+  captureAiUsage({
+    provider: "anthropic",
+    model: "claude-sonnet-4-5-20250929",
+    tenant_id: turn.tenantId || turn.tenant_id,
+    user_id: turn.userId || turn.user_id || "quality-evaluation",
+    channel: turn.channel || "internal",
+    bot_id: "platform",
+    feature: "quality_evaluation",
+    usage: resp.data && resp.data.usage,
+    context_messages: 1
+  });
   let txt = "";
   const blocks = (resp.data && resp.data.content) || [];
   for (const b of blocks) { if (b.type === "text") txt += b.text; }
@@ -21981,7 +22393,7 @@ app.post("/admin/evaluate", async (req, res) => {
     if (rows) {
       for (const r of rows) {
         const normalized = normalizeTurnRow(r);
-        const turn = { userMessage: normalized.userMessage, botReply: normalized.botReply, tools: normalized.tools, zeroResultQueries: normalized.zeroResultQueries, handoff: normalized.handoff, rating: normalized.rating };
+        const turn = { tenantId: normalized.tenantId, channel: normalized.channel, userId: normalized.userId, userMessage: normalized.userMessage, botReply: normalized.botReply, tools: normalized.tools, zeroResultQueries: normalized.zeroResultQueries, handoff: normalized.handoff, rating: normalized.rating };
         try { const ev = await evaluateTurn(turn); await supabaseUpdateEval(r.id, ev); evaluated++; }
         catch (e) { await supabaseUpdateEval(r.id, { error: true, message: (e.message || "eval failed").slice(0, 120) }); failed++; log("error", "eval_failed", { error: e.message }); }
       }

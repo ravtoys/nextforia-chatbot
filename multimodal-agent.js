@@ -161,12 +161,14 @@ function createMultimodalAgent(config) {
       if (media.kind === "audio") {
         const transcript = await input.transcribeAudio(downloaded, media, {
           tenant_id: input.tenant_id,
+          user_id: input.user_id,
           conversation_meta: input.conversation_meta || {}
         });
         conversationInput = buildVoiceConversationInput(transcript && transcript.text || transcript, transcript || {});
       } else if (media.kind === "image") {
         const analysis = await input.analyzeImage(downloaded, media, {
           tenant_id: input.tenant_id,
+          user_id: input.user_id,
           conversation_meta: input.conversation_meta || {}
         });
         conversationInput = buildImageConversationInput(analysis && analysis.text || analysis, media.caption);
