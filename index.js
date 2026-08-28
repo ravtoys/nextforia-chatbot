@@ -5,6 +5,7 @@ const { EventEmitter } = require("events");
 const path = require("path");
 const webPush = require("web-push");
 const { ElevenLabsClient } = require("@elevenlabs/elevenlabs-js");
+const { evaluateHumanHandoffState } = require("./human-handoff-state");
 const {
   createRateLimiter,
   decryptStoredText,
@@ -444,7 +445,7 @@ app.get("/admin/terms", (req, res) => res.type("html").send(renderTermsOfService
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────────
 const PRODUCT_NAME = "NextforIA Chatbot";
-const BOT_VERSION = "v471-super-admin-ai-costs-simple";  // bump cada release; usado por endpoints /admin/*
+const BOT_VERSION = "v472-handoff-expiry-recovery";  // bump cada release; usado por endpoints /admin/*
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "";
 const DASHBOARD_KEY = process.env.DASHBOARD_KEY || "";
 const DASHBOARD_SESSION_COOKIE = "nextforia_dashboard_session";
@@ -1033,7 +1034,6 @@ const serviceAreaChecks = new Map();
 const processedMetaEventIds = new Set();
 const processedWhatsAppStatusEventIds = new Set();
 const recentManagedInstagramOutbound = new Map();
-const inboundMessageWindows = new Map();
 const adminMessageDeliveryRequests = new Map();
 const ADMIN_MESSAGE_IDEMPOTENCY_TTL_MS = 10 * 60 * 1000;
 const instagramRuntimeState = {
@@ -4846,26 +4846,22 @@ async function recordHumanPausedInbound(userId, message, runtime) {
 async function humanControlActiveFor(userId, tenantId) {
   const cleanTenant = cleanTenantId(tenantId) || DEFAULT_TENANT_ID;
   const instagramConversation = conversationChannel(userId) === "instagram";
-  if (hasHumanHandoff(userId, cleanTenant) && !instagramConversation) return true;
+  const cachedActive = hasHumanHandoff(userId, cleanTenant);
   if (instagramConversation) deleteHumanHandoff(userId, cleanTenant);
-  const rows = await supabaseFetchUserRecent(userId, 20, cleanTenant);
-  if (!rows || !rows.length) return false;
-  for (const row of rows) {
-    const tools = row.tools || [];
-    if (tools.includes("admin_release") || tools.includes("admin_resolve")) return false;
-    const adminHandoff = tools.includes("admin_takeover") || tools.includes("admin_send_message");
-    const botHandoff = tools.includes("request_human_handoff");
-    if (adminHandoff || botHandoff) {
-      const activatedAt = Date.parse(row.ts || row.created_at || "");
-      const ttl = adminHandoff ? ADMIN_HANDOFF_TTL_MS : BOT_HANDOFF_TTL_MS;
-      if (activatedAt && Date.now() - activatedAt > ttl) {
-        recordAdminEvent(userId, "admin_release", "[Sistema] Handoff expirado automáticamente.", "ok", false, { tenant_id: cleanTenant });
-        if (conversationChannel(userId) === "instagram") instagramRuntimeState.last_handoff_auto_release_at = new Date().toISOString();
-        return false;
-      }
-      addHumanHandoff(userId, cleanTenant);
-      return true;
-    }
+  const rows = await supabaseFetchUserRecent(userId, 100, cleanTenant);
+  if (!rows) return cachedActive;
+  const state = evaluateHumanHandoffState(rows, {
+    botTtlMs: BOT_HANDOFF_TTL_MS,
+    adminTtlMs: ADMIN_HANDOFF_TTL_MS
+  });
+  if (state.active) {
+    addHumanHandoff(userId, cleanTenant);
+    return true;
+  }
+  deleteHumanHandoff(userId, cleanTenant);
+  if (state.expired) {
+    await recordAdminEvent(userId, "admin_release", "[Sistema] Handoff expirado automáticamente.", "ok", false, { tenant_id: cleanTenant });
+    if (instagramConversation) instagramRuntimeState.last_handoff_auto_release_at = new Date().toISOString();
   }
   return false;
 }
@@ -8296,27 +8292,6 @@ async function restoreConversationHistoryFromPersistence(userId, tenantId, state
 
 // ─── MAIN CONVERSATION LOOP ──────────────────────────────────────────────────
 
-function acceptInboundMessageRate(userId, now) {
-  now = now || Date.now();
-  const hourAgo = now - 60 * 60 * 1000;
-  const minuteAgo = now - 60 * 1000;
-  const timestamps = (inboundMessageWindows.get(userId) || []).filter(function (timestamp) { return timestamp > hourAgo; });
-  const lastMinute = timestamps.filter(function (timestamp) { return timestamp > minuteAgo; }).length;
-  if (timestamps.length >= 100 || lastMinute >= 20) {
-    inboundMessageWindows.set(userId, timestamps);
-    return false;
-  }
-  timestamps.push(now);
-  inboundMessageWindows.set(userId, timestamps);
-  if (inboundMessageWindows.size > 10000) {
-    for (const [key, values] of inboundMessageWindows) {
-      if (!values.length || values[values.length - 1] <= hourAgo) inboundMessageWindows.delete(key);
-      if (inboundMessageWindows.size <= 10000) break;
-    }
-  }
-  return true;
-}
-
 async function handleConversation(userId, userMessage, conversationMeta) {
   return conversationTurnContext.run(function () {
     return handleConversationInTurnContext(userId, userMessage, conversationMeta);
@@ -8377,11 +8352,6 @@ async function handleConversationInTurnContext(userId, userMessage, conversation
     const rejection = "Tu mensaje es demasiado largo para procesarlo con seguridad. Envíalo en partes más cortas, por favor.";
     const sent = await sendBotReply(rejection);
     await recordTurn(userId, userMessage, rejection, sent ? "ok" : "error", conversationRuntime);
-    return;
-  }
-  if (!acceptInboundMessageRate(stateKey)) {
-    log("warn", "inbound_message_rejected", { user: maskedIdentifier(userId), reason: "rate_limit" });
-    await recordTurn(userId, userMessage, "", "rate_limited", conversationRuntime);
     return;
   }
   trackIncomingMessage(userId);
@@ -8642,7 +8612,12 @@ async function handleConversationInTurnContext(userId, userMessage, conversation
       channel: conversationRuntime.channel,
       reason: runtimePolicy.block_reason
     });
-    await recordTurn(userId, userMessage, "", "blocked", conversationRuntime);
+    const unavailableReply = "En este momento necesito que una persona del equipo revise la configuración antes de responderte con seguridad. Ya registré tu mensaje y el equipo continuará por este chat.";
+    await queueCustomerHandoffNotification(tenantId, userId, "tenant_configuration_required", {
+      source_event_id: conversationRuntime.sourceEventId || conversationRuntime.source_event_id
+    });
+    const unavailableSent = await sendBotReply(unavailableReply);
+    await recordTurn(userId, userMessage, unavailableReply, unavailableSent ? "blocked_replied" : "error", conversationRuntime);
     return;
   }
   const conversationSystemPrompt = "Eres el asistente oficial de este cliente de Nextfor IA. Sigue únicamente la configuración del tenant incluida abajo. Protege datos personales, no inventes información y escala si no puedes operar con seguridad.";
@@ -9084,11 +9059,11 @@ async function handleConversationInTurnContext(userId, userMessage, conversation
       if (shouldPresentAppointmentServicesRules) {
         reply = ensureAppointmentServicesRulesPresentation(reply, appointmentServicesRulesOverview);
       }
-      history.push({ role: "assistant", content: reply || "(sin texto)" });
+      const finalReply = reply || "No logré generar una respuesta útil en este intento. Por favor, envíame nuevamente tu solicitud y continuaré ayudándote.";
+      history.push({ role: "assistant", content: finalReply });
       conversations.set(stateKey, history.slice(-MAX_CONVERSATION_HISTORY));
-      const replySent = await sendBotReply(reply);
-      if (reply) await recordTurn(userId, userMessage, reply, replySent ? "ok" : "error", conversationRuntime);
-      else await recordTurn(userId, userMessage, "", "fallback", conversationRuntime);
+      const replySent = await sendBotReply(finalReply);
+      await recordTurn(userId, userMessage, finalReply, replySent ? (reply ? "ok" : "fallback_replied") : "error", conversationRuntime);
       if (reply && replySent && adaptiveBudget.reasons.includes("strong_purchase_intent")) {
         await createRetargetingJobForCustomer(tenantId, userId, "high_intent", (conversationMeta.source_event_id || "conversation:" + Date.now()) + ":high-intent", {
           source_at: conversationMeta.source_at || new Date().toISOString(),
