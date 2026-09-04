@@ -9,6 +9,7 @@ const {
   extractWhatsAppMessageEvents,
   recoverableInternalError,
   whatsappMessageSender,
+  whatsappSenderMissingFailure,
   whatsappDeliveryFailure
 } = require("./meta-webhook-inbox");
 
@@ -71,6 +72,17 @@ const {
     "",
     "ambiguous contact lists must never guess a sender"
   );
+  const missingSenderFailure = whatsappSenderMissingFailure(
+    { contacts: [{ profile: { name: "No identifier" } }] },
+    { id: "wamid.senderless", type: "unsupported" }
+  );
+  assert.strictEqual(missingSenderFailure.permanent, true, "a stored payload cannot acquire a missing sender through retries");
+  assert.strictEqual(missingSenderFailure.retryable, false);
+  assert.deepStrictEqual(missingSenderFailure.diagnostic, {
+    message_type: "unsupported",
+    direct_sender_present: false,
+    contact_sender_count: 0
+  });
   const contactFallbackStore = new InMemoryMetaWebhookInboxStore();
   await contactFallbackStore.enqueue([contactFallbackEvent]);
   let processedContactSender = "";

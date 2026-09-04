@@ -159,8 +159,8 @@ async function waitForJson(url, predicate, timeoutMs) {
     "WhatsApp webhook signals must use the resolved tenant, never the RAV default");
   assert.match(source, /"whatsapp_sender_unresolved"[\s\S]*?tenant_id: destination\.tenantId[\s\S]*?destination_suffix/,
     "unresolved WhatsApp senders must produce tenant-scoped operational telemetry");
-  assert.match(source, /missingSender\.recoverAfterFix = true/,
-    "an internal sender parsing failure must remain queued for the corrected release");
+  assert.match(source, /throw whatsappSenderMissingFailure\(value, message\)/,
+    "a provider payload with no resolvable sender must be retained as one permanent incident, not retried indefinitely");
   assert.match(
     source,
     /const from = whatsappMessageSender\(value, message\);[\s\S]*?if \(type === "text"\)[\s\S]*?await handleConversation\(from, messageText, \{[\s\S]*?tenant_id: destination\.tenantId/,

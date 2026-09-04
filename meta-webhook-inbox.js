@@ -128,6 +128,25 @@ function whatsappMessageSender(value, message) {
   return contactSenders.length === 1 ? contactSenders[0] : "";
 }
 
+function whatsappSenderMissingFailure(value, message) {
+  const failure = new Error("whatsapp_sender_missing");
+  // Retrying cannot add an identity that is absent from the stored provider
+  // payload. Keep the encrypted event for diagnosis, but dead-letter it after
+  // the first attempt instead of retrying it for three days.
+  failure.permanent = true;
+  failure.retryable = false;
+  failure.diagnostic = {
+    message_type: text(message && message.type, 80) || null,
+    direct_sender_present: !!text(message && message.from, 500),
+    contact_sender_count: Array.from(new Set(
+      (Array.isArray(value && value.contacts) ? value.contacts : [])
+        .map(function (contact) { return text(contact && contact.wa_id, 500); })
+        .filter(Boolean)
+    )).length
+  };
+  return failure;
+}
+
 function extractWhatsAppMessageEvents(body) {
   if (!body || body.object !== "whatsapp_business_account") return [];
   const events = [];
@@ -655,5 +674,6 @@ module.exports = {
   extractWhatsAppMessageEvents,
   recoverableInternalError,
   whatsappMessageSender,
+  whatsappSenderMissingFailure,
   whatsappDeliveryFailure
 };
