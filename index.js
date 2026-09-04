@@ -291,6 +291,7 @@ const {
   createMetaWebhookInbox,
   extractWhatsAppMessageEvents,
   whatsappMessageSender,
+  whatsappSenderMissingFailure,
   whatsappDeliveryFailure
 } = require("./meta-webhook-inbox");
 const {
@@ -569,7 +570,7 @@ const BOT_OPS_ENABLED = BOT_OPS_TEST_MODE || (
   process.env.BOT_OPS_ENABLED !== "0" && SUPABASE_ENABLED && !!DATA_ENCRYPTION_KEY
 );
 const BOT_OPS_TIME_ZONE = String(process.env.BOT_OPS_TIME_ZONE || "America/Bogota").trim();
-const BOT_OPS_DAILY_MINUTE = boundedEnvInt("BOT_OPS_DAILY_MINUTE", 6 * 60, 0, 1439);
+const BOT_OPS_MONITOR_INTERVAL_MINUTES = boundedEnvInt("BOT_OPS_MONITOR_INTERVAL_MINUTES", 5, 1, 60);
 const BOT_OPS_WEEKLY_MINUTE = boundedEnvInt("BOT_OPS_WEEKLY_MINUTE", 6 * 60 + 30, 0, 1439);
 const BOT_OPS_CONTROLLED_TESTS_ENABLED = process.env.BOT_OPS_CONTROLLED_TESTS_ENABLED === "1" && (
   process.env.NODE_ENV === "test" || (() => {
@@ -1165,7 +1166,7 @@ const botOpsCriticalNotifier = createResendBotOpsNotifier({
 const botOpsService = botOpsStore ? createBotOpsService({
   store: botOpsStore,
   timeZone: BOT_OPS_TIME_ZONE,
-  dailyMinute: BOT_OPS_DAILY_MINUTE,
+  monitorIntervalMinutes: BOT_OPS_MONITOR_INTERVAL_MINUTES,
   weeklyMinute: BOT_OPS_WEEKLY_MINUTE,
   notifyCritical: botOpsCriticalNotifier,
   safeAction: async function (action, context) {
@@ -1553,6 +1554,7 @@ const metaWebhookInbox = metaWebhookInboxStore
           tenantId = cleanTenantId(destination && destination.tenantId);
         }
         const userId = whatsappMessageSender(payload.value, payload.message);
+        const diagnostic = error && error.diagnostic || {};
         await recordBotOpsEvent({
           event_id: "botops:inbound-failure:" + cleanRuntimeText(row && row.event_id, 500) + ":" + (outcome.permanent ? "permanent" : "retryable"),
           tenant_id: tenantId || "unknown-tenant",
@@ -1567,7 +1569,10 @@ const metaWebhookInbox = metaWebhookInboxStore
             error_type: cleanRuntimeText(error && error.message, 160),
             retryable: outcome.retryable === true,
             permanent: outcome.permanent === true,
-            attempts: Number(row && row.attempts || 0)
+            attempts: Number(row && row.attempts || 0),
+            message_type: cleanRuntimeText(diagnostic.message_type || payload.message.type, 80) || null,
+            direct_sender_present: diagnostic.direct_sender_present === true || !!cleanRuntimeText(payload.message.from, 500),
+            contact_sender_count: Math.max(0, Number(diagnostic.contact_sender_count || 0))
           }
         });
       },
@@ -8695,9 +8700,7 @@ async function processWhatsAppInboxEvent(payload, inboxRow) {
           .filter(Boolean)
       )).length
     });
-    const missingSender = new Error("whatsapp_sender_missing");
-    missingSender.recoverAfterFix = true;
-    throw missingSender;
+    throw whatsappSenderMissingFailure(value, message);
   }
   let receipt = null;
   if (inboxRow) {
@@ -21281,7 +21284,7 @@ app.get("/admin/bot-ops/summary", async (req, res) => {
       version: BOT_VERSION,
       recurring_schedule: {
         time_zone: BOT_OPS_TIME_ZONE,
-        daily: "06:00",
+        continuous_minutes: BOT_OPS_MONITOR_INTERVAL_MINUTES,
         weekly: "Monday 06:30"
       },
       independent_email_alerts_ready: !!(RESEND_API_KEY && BOT_OPS_ALERT_FROM_EMAIL && BOT_OPS_ALERT_EMAILS.length)
@@ -22164,7 +22167,7 @@ app.listen(PORT, () => {
     initialBotOpsCheck.unref();
     const botOpsTimer = setInterval(runBotOpsDue, 5 * 60 * 1000);
     botOpsTimer.unref();
-    console.log(`Bot Ops scheduled daily at 06:00 and Mondays at 06:30 (${BOT_OPS_TIME_ZONE})`);
+    console.log(`Bot Ops monitoring every ${BOT_OPS_MONITOR_INTERVAL_MINUTES} minutes and reviewing weekly on Mondays at 06:30 (${BOT_OPS_TIME_ZONE})`);
   }
   if (RENDER_SELF_HEALTH_URL) {
     const checkUrl = `${RENDER_SELF_HEALTH_URL}/instagram/health`;

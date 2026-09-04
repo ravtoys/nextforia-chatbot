@@ -73,7 +73,10 @@ function sourceKey(event, suffix) {
     text(event && event.tenant_id, 160),
     text(event && event.channel, 40),
     text(event && event.conversation_key, 80),
-    text(event && event.event_id, 300),
+    // A processing failure may be reported first as retryable and later as
+    // permanent. Both observations belong to the same provider event and must
+    // update one finding instead of producing two incidents.
+    text(event && (event.source_id || event.event_id), 300),
     text(suffix, 120)
   ].join("\u001f")).slice(0, 48);
 }
@@ -284,7 +287,14 @@ function analyzeEvent(event) {
         : "Escalar a atención humana y aprobar la corrección permanente antes de reactivar.",
       requires_approval: !retryable,
       safe_action: retryable ? "durable_retry" : "human_attention",
-      evidence: { retryable, error_type: text(payload.error_type, 120) }
+      evidence: {
+        retryable,
+        error_type: text(payload.error_type, 120),
+        attempts: Number(payload.attempts || 0),
+        message_type: text(payload.message_type, 80) || null,
+        direct_sender_present: payload.direct_sender_present === true,
+        contact_sender_count: Math.max(0, Number(payload.contact_sender_count || 0))
+      }
     })], resolves_handoff: false, resolve_categories: [] };
   }
   if (event && event.event_type === "appointment_result") {
@@ -637,7 +647,7 @@ function createBotOpsService(options) {
   const deepReviewLimit = Math.max(0, Math.min(25, Number(options.deepReviewLimit) || 8));
   const log = typeof options.log === "function" ? options.log : function () {};
   const timeZone = options.timeZone || "America/Bogota";
-  const dailyMinute = Number.isFinite(Number(options.dailyMinute)) ? Number(options.dailyMinute) : 360;
+  const monitorIntervalMinutes = Math.max(1, Math.min(60, Number(options.monitorIntervalMinutes) || 5));
   const weeklyMinute = Number.isFinite(Number(options.weeklyMinute)) ? Number(options.weeklyMinute) : 390;
   const handoffMaxAgeMs = Math.max(60 * 1000, Number(options.handoffMaxAgeMs) || 15 * 60 * 1000);
 
@@ -830,7 +840,10 @@ function createBotOpsService(options) {
     const date = now instanceof Date ? now : clock();
     const parts = scheduleParts(date, timeZone);
     const results = [];
-    if (parts.minuteOfDay >= dailyMinute) results.push(await runDaily(parts.date, trigger || "due_scheduler"));
+    const monitorBucket = Math.floor(parts.minuteOfDay / monitorIntervalMinutes) * monitorIntervalMinutes;
+    const monitorHour = String(Math.floor(monitorBucket / 60)).padStart(2, "0");
+    const monitorMinute = String(monitorBucket % 60).padStart(2, "0");
+    results.push(await runDaily(parts.date + "T" + monitorHour + ":" + monitorMinute, trigger || "continuous_monitor"));
     if (parts.weekday === "Mon" && parts.minuteOfDay >= weeklyMinute) results.push(await runWeekly(parts.date, trigger || "due_scheduler"));
     return { ok: true, checked_at: date.toISOString(), time_zone: timeZone, results };
   }
@@ -922,7 +935,7 @@ function createBotOpsService(options) {
     runWeekly,
     runDue,
     snapshot: function () { return store.snapshot(); },
-    schedule: { time_zone: timeZone, daily_minute: dailyMinute, weekly_minute: weeklyMinute }
+    schedule: { time_zone: timeZone, monitor_interval_minutes: monitorIntervalMinutes, weekly_minute: weeklyMinute }
   };
 }
 

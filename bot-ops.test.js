@@ -96,6 +96,49 @@ const {
   assert.strictEqual(secondRun.summary.reviewed_events, 0, "the next daily review must not re-read old activity");
   assert.strictEqual(alerts.length, 1, "old critical events must not alert again without new activity");
 
+  await service.recordEvent({
+    event_id: "botops:inbound-failure:queue-1:retryable",
+    tenant_id: "empresa-a",
+    bot_id: "customer_service",
+    channel: "whatsapp",
+    source_id: "queue-1",
+    event_type: "inbound_processing_failure",
+    payload: { error_type: "whatsapp_sender_missing", retryable: true, attempts: 1 }
+  });
+  await service.runDaily("incident:queue-1:retryable", "controlled_test");
+  await service.recordEvent({
+    event_id: "botops:inbound-failure:queue-1:permanent",
+    tenant_id: "empresa-a",
+    bot_id: "customer_service",
+    channel: "whatsapp",
+    source_id: "queue-1",
+    event_type: "inbound_processing_failure",
+    payload: {
+      error_type: "whatsapp_sender_missing",
+      retryable: false,
+      attempts: 1,
+      message_type: "unsupported",
+      direct_sender_present: false,
+      contact_sender_count: 0
+    }
+  });
+  await service.runDaily("incident:queue-1:permanent", "controlled_test");
+  const senderlessFindings = (await store.listFindings({})).filter(function (finding) {
+    return finding.category === "message_not_registered" && finding.source_event_id.includes("queue-1");
+  });
+  assert.strictEqual(senderlessFindings.length, 1, "one provider event must not create retryable and permanent duplicate incidents");
+  assert.strictEqual(senderlessFindings[0].severity, "critical");
+  assert.strictEqual(senderlessFindings[0].occurrence_count, 2);
+  assert.strictEqual(senderlessFindings[0].evidence.message_type, "unsupported");
+
+  now = new Date("2026-08-15T12:02:00.000Z");
+  const monitorRun = await service.runDue(now, "continuous_test");
+  assert.strictEqual(monitorRun.results[0].review_type, "daily");
+  const sameMonitorBucket = await service.runDue(new Date("2026-08-15T12:04:59.000Z"), "continuous_test");
+  assert.strictEqual(sameMonitorBucket.results[0].skipped, true, "all instances must share one five-minute monitoring claim");
+  const nextMonitorBucket = await service.runDue(new Date("2026-08-15T12:05:00.000Z"), "continuous_test");
+  assert.strictEqual(nextMonitorBucket.results[0].skipped, undefined, "the next monitoring bucket must run without waiting for the next day");
+
   now = new Date("2026-08-17T11:35:00.000Z"); // Monday 06:35 America/Bogota
   const weekly = await service.runWeekly("2026-08-17", "weekly_test");
   assert.strictEqual(weekly.ok, true);
@@ -106,7 +149,7 @@ const {
 
   const snapshot = await service.snapshot();
   assert.strictEqual(snapshot.overall_status, "critical");
-  assert.strictEqual(snapshot.last_daily_review, "2026-08-15T11:05:00.000Z");
+  assert.strictEqual(snapshot.last_daily_review, "2026-08-15T12:02:00.000Z");
   assert.strictEqual(snapshot.last_weekly_review, "2026-08-17T11:35:00.000Z");
   assert.strictEqual(snapshot.last_updated, "2026-08-17T11:35:00.000Z");
   assert.strictEqual(snapshot.guardrails.automatic_prompt_changes, false);
