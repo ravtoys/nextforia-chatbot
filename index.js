@@ -444,7 +444,7 @@ app.get("/admin/terms", (req, res) => res.type("html").send(renderTermsOfService
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────────
 const PRODUCT_NAME = "NextforIA Chatbot";
-const BOT_VERSION = "v471-super-admin-ai-costs-simple";  // bump cada release; usado por endpoints /admin/*
+const BOT_VERSION = "v472-appointment-agenda-resilience";  // bump cada release; usado por endpoints /admin/*
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "";
 const DASHBOARD_KEY = process.env.DASHBOARD_KEY || "";
 const DASHBOARD_SESSION_COOKIE = "nextforia_dashboard_session";
@@ -3106,8 +3106,19 @@ async function syncAppointmentReminderSchedule(tenantId, appointment) {
       appointment_starts_at: appointment.starts_at
     });
   });
-  await persistAppointmentReminders(generated);
-  return generated;
+  try {
+    await persistAppointmentReminders(generated);
+    return generated;
+  } catch (error) {
+    // A reminder is supplementary to the booking. Its storage must never make
+    // an already-created appointment fail for the customer or block the bot.
+    log("warn", "appointment_reminder_schedule_persist_failed", {
+      tenant_id: cleanTenantId(tenantId),
+      appointment_id_suffix: String(appointment && (appointment.appointment_id || appointment.conversation_id) || "").slice(-12),
+      error: cleanRuntimeText(error && error.message, 240) || "appointment_reminder_storage_unavailable"
+    });
+    return [];
+  }
 }
 
 function appointmentReminderMessage(row, appointment, configuration) {
@@ -20176,13 +20187,33 @@ app.put("/admin/panel/appointment-settings", async (req, res) => {
   if (!customerBusinessHasAppointmentModule(business)) return res.status(403).json({ ok: false, error: "module_not_contracted" });
   try {
     const saved = await saveAppointmentSettingsForTenant(tenantId, req.body || {}, auth);
+    let remindersSync = "ready";
+    // Reminder schedules are materialized when their rules are saved, never
+    // while a customer merely opens the agenda. This preserves existing
+    // reminders without turning a read request into a database write.
+    try {
+      await hydrateAppointmentsForTenant(tenantId);
+      const snapshot = appointmentRegistry.snapshot(tenantId);
+      await refreshAppointmentRemindersForTenant(
+        tenantId,
+        appointmentSettingsFromOnboarding(saved.record),
+        snapshot.appointments
+      );
+    } catch (reminderError) {
+      remindersSync = "degraded";
+      log("warn", "appointment_settings_reminder_refresh_failed", {
+        tenant_id: tenantId,
+        error: cleanRuntimeText(reminderError && reminderError.message, 240) || "appointment_reminder_storage_unavailable"
+      });
+    }
     res.json({
       ok: true,
       settings: publicAppointmentSettings(saved.settings, saved.record.appointment_configuration),
       revision: saved.settings.revision,
       affected_appointments: saved.affectedAppointments,
       persistence_verified: saved.persistenceVerified === true,
-      verification: saved.verification
+      verification: saved.verification,
+      reminders_sync: remindersSync
     });
   } catch (error) {
     const status = error instanceof AppointmentOperationsError ? error.status : 500;
@@ -20208,21 +20239,65 @@ app.get("/admin/panel/appointments-data", async (req, res) => {
   const persistent = await hydrateAppointmentsForTenant(tenantId);
   const snapshot = appointmentRegistry.snapshot(tenantId);
   snapshot.source = persistent ? "supabase" : "memory";
-  const onboarding = await loadClientOnboarding(false, tenantId);
+  // The agenda is a read view. Loading it must never create reminder records
+  // or depend on an optional reminder/calendar provider being available.
+  let onboarding = null;
+  let onboardingAvailable = true;
+  try {
+    onboarding = await loadClientOnboarding(false, tenantId);
+  } catch (error) {
+    onboardingAvailable = false;
+    log("warn", "customer_panel_appointments_onboarding_unavailable", {
+      tenant_id: tenantId,
+      error: cleanRuntimeText(error && error.message, 240) || "onboarding_unavailable"
+    });
+  }
   const settings = appointmentSettingsFromOnboarding(onboarding);
-  const reminders = APPOINTMENT_PANEL_V2_ENABLED
-    ? await refreshAppointmentRemindersForTenant(tenantId, settings, snapshot.appointments)
-    : [];
+  let reminders = [];
+  let remindersAvailable = true;
+  if (APPOINTMENT_PANEL_V2_ENABLED) {
+    try {
+      reminders = await loadAppointmentRemindersForTenant(tenantId);
+    } catch (error) {
+      remindersAvailable = false;
+      log("warn", "customer_panel_appointments_reminders_unavailable", {
+        tenant_id: tenantId,
+        error: cleanRuntimeText(error && error.message, 240) || "reminders_unavailable"
+      });
+    }
+  }
   const reminderData = reminderSnapshot(reminders, { tenantId });
   const capabilities = customerPanelCapabilities(auth.role);
   const channels = await setupReviewChannels(tenantId).catch(function () { return []; });
   const responsePayload = customerAppointmentSnapshot(snapshot, business);
   responsePayload.metrics = Object.assign({}, responsePayload.metrics, appointmentReminderMetrics(reminderData));
+  let integrations;
+  let integrationsAvailable = true;
+  try {
+    integrations = await appointmentIntegrationsForRecord(onboarding, tenantId, channels);
+  } catch (error) {
+    integrationsAvailable = false;
+    integrations = {
+      ready_for_testing: false,
+      ready_for_live: false,
+      blockers: ["appointment_integrations_unavailable"]
+    };
+    log("warn", "customer_panel_appointments_integrations_unavailable", {
+      tenant_id: tenantId,
+      error: cleanRuntimeText(error && error.message, 240) || "integrations_unavailable"
+    });
+  }
   res.json(Object.assign(responsePayload, {
-    integrations: await appointmentIntegrationsForRecord(onboarding, tenantId, channels),
-    settings: publicAppointmentSettings(settings, onboarding.appointment_configuration),
+    integrations,
+    settings: publicAppointmentSettings(settings, onboarding && onboarding.appointment_configuration),
     reminders: reminderData.items,
     reminder_metrics: reminderData,
+    data_health: {
+      appointments: persistent ? "ready" : "degraded",
+      onboarding: onboardingAvailable ? "ready" : "degraded",
+      reminders: remindersAvailable ? "ready" : "degraded",
+      integrations: integrationsAvailable ? "ready" : "degraded"
+    },
     capabilities: {
       manage_appointments: capabilities.intervene,
       manage_settings: capabilities.configure_bot,
